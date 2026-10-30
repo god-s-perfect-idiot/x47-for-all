@@ -1,0 +1,62 @@
+# Built application files
+*.apk
+*.ap_
+*.aab
+
+# Files for the ART/Dalvik VM
+*.dex
+
+# Java class files
+*.class
+
+# Generated files
+bin/
+gen/
+out/
+
+# Gradle files
+.gradle/
+build/
+**/build/
+
+# Local configuration (SDK path, etc.)
+local.properties
+
+# Android Studio / IntelliJ
+*.iml
+.idea/
+.navigation/
+captures/
+.externalNativeBuild/
+.cxx/
+
+# Kotlin
+.kotlin/
+
+# NDK
+obj/
+
+# Signing
+*.jks
+*.keystore
+!debug.keystore
+
+# Log / profiling
+*.log
+*.hprof
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Editor / tooling
+*.swp
+*~
+.vscode/
+*.bak
+
+# Harness working copies (keep references + intentional phone-capture-*.png)
+docs/harness/
+docs/captures/
+docs/_bottom_*.png
+docs/crop-*.png

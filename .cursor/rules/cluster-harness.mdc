@@ -1,0 +1,15 @@
+---
+description: After cluster UI changes, deploy with the harness; verify from source, not captures
+globs: app/src/main/java/**/*.kt
+alwaysApply: false
+---
+
+# Cluster UI changes
+
+After editing Compose UI, theme, or cluster components:
+
+1. Prefer `./scripts/harness.sh` (deploy + design facts) over ad-hoc adb/gradle commands.
+2. Follow `.cursor/skills/cluster-harness/SKILL.md`.
+3. **Do not** screengrab or score UI from `docs/captures/` — captures are inaccurate.
+4. Verify with `docs/harness/design-facts.md` + Compose sources + reference intent (`docs/screen-reference-2.jpg` / `docs/uv-x47-reference.png`) using `.cursor/skills/cluster-harness/checklist.md`.
+5. Treat the device / user feedback as visual truth for pixels on glass.
