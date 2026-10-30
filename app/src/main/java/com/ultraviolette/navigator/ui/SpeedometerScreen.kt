@@ -133,6 +133,7 @@ fun SpeedometerScreen(
 
                 CombatModeNotch(
                     rideMode = data.rideMode,
+                    isMoving = data.isMoving,
                     modifier = Modifier.align(Alignment.BottomCenter)
                 )
 

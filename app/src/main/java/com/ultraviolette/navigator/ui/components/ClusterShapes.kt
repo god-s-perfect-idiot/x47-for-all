@@ -75,8 +75,15 @@ fun CrosshairFrame(modifier: Modifier = Modifier) {
     }
 }
 
+/**
+ * Semi-circle lean gauge. [leanAngleDeg] is signed: 0 upright, + right, − left.
+ * Needle sweeps within the blue/red tick band (~±45°).
+ */
 @Composable
-fun LeanAngleGauge(modifier: Modifier = Modifier) {
+fun LeanAngleGauge(
+    leanAngleDeg: Float = 0f,
+    modifier: Modifier = Modifier
+) {
     Canvas(modifier = modifier) {
         val stroke = 2.6.dp.toPx()
         val radius = minOf(size.width / 2f, size.height) - stroke
@@ -107,7 +114,9 @@ fun LeanAngleGauge(modifier: Modifier = Modifier) {
         tick(120.0, ClusterBlue)
         tick(60.0, ClusterRed)
 
-        val needle = Math.toRadians(85.0)
+        // Math angle: 90° = upright. Positive lean (right) swings toward 60°.
+        val needleDeg = (90.0 - leanAngleDeg.toDouble().coerceIn(-45.0, 45.0))
+        val needle = Math.toRadians(needleDeg)
         drawLine(
             color = ClusterDark,
             start = Offset(

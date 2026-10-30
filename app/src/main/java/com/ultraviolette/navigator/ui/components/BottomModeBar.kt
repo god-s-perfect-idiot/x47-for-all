@@ -1,5 +1,8 @@
 package com.ultraviolette.navigator.ui.components
 
+import androidx.compose.animation.animateColorAsState
+import androidx.compose.animation.core.FastOutSlowInEasing
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -12,6 +15,7 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
@@ -24,6 +28,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.ultraviolette.navigator.ui.theme.ClusterBlue
 import com.ultraviolette.navigator.ui.theme.ClusterCombat
 import com.ultraviolette.navigator.ui.theme.ClusterPill
 import com.ultraviolette.navigator.ui.theme.ClusterUiFont
@@ -44,11 +49,21 @@ val CombatNotchTopHalf: Dp = 100.dp
 val CombatHangBelow: Dp = 0.dp
 val CombatRiseAbove: Dp = CombatNotchRise
 
+/** Shared with Control Centre hide/show so ride-mode enter/exit feels like one beat. */
+internal const val RideModeTransitionMs = 360
+
 @Composable
 fun CombatModeNotch(
     rideMode: String,
+    isMoving: Boolean = false,
     modifier: Modifier = Modifier
 ) {
+    val barColor by animateColorAsState(
+        targetValue = if (isMoving) ClusterBlue else ClusterCombat,
+        animationSpec = tween(RideModeTransitionMs, easing = FastOutSlowInEasing),
+        label = "combatBarColor"
+    )
+
     Box(
         modifier = modifier
             .fillMaxWidth()
@@ -78,7 +93,7 @@ fun CombatModeNotch(
                 lineTo(0f, size.height)
                 close()
             }
-            drawPath(path, ClusterCombat)
+            drawPath(path, barColor)
         }
 
         // Sit the label in the raised notch, not the lower flat wings.

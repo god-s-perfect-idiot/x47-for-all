@@ -44,7 +44,7 @@ This builds, installs, launches, settles, smoke-checks focus, and writes `docs/h
 | Odo / trip | `odometerKm`, `tripKm` |
 | Energy / range | `energyWhPerKm`, `energyRecommended`, `rangeKm` |
 | Status pill | `timeText`, `batteryPercent`, `signalBars` |
-| Lean / weather | `leanAngleDeg`, `ambientTempC` |
+| Lean / weather | `leanAngleDeg`; `ambientTempC` + condition from Open-Meteo (GPS) |
 | Mode bar | `rideMode`, `regenLevel`, `efficiencyLabel` |
 | Icons | `tractionControlOn`, `absOn` |
 

@@ -1,23 +1,33 @@
 package com.ultraviolette.navigator
 
+import android.Manifest
+import android.content.pm.PackageManager
 import android.os.Build
 import android.os.Bundle
 import android.view.WindowManager
 import android.widget.Toast
 import androidx.activity.ComponentActivity
+import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
+import androidx.activity.result.contract.ActivityResultContracts
+import androidx.activity.viewModels
 import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.runtime.remember
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.getValue
 import androidx.compose.ui.Modifier
+import androidx.core.content.ContextCompat
 import androidx.core.view.WindowCompat
 import androidx.core.view.WindowInsetsCompat
 import androidx.core.view.WindowInsetsControllerCompat
-import com.ultraviolette.navigator.model.ClusterPlaceholders
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.ultraviolette.navigator.ui.ClusterViewModel
 import com.ultraviolette.navigator.ui.SpeedometerScreen
 import com.ultraviolette.navigator.ui.theme.UltravioletteNavigatorTheme
 
 class MainActivity : ComponentActivity() {
+    private val clusterViewModel: ClusterViewModel by viewModels()
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
@@ -25,9 +35,32 @@ class MainActivity : ComponentActivity() {
 
         setContent {
             UltravioletteNavigatorTheme {
-                val placeholders = remember { ClusterPlaceholders() }
+                val data by clusterViewModel.data.collectAsStateWithLifecycle()
+
+                val permissionLauncher = rememberLauncherForActivityResult(
+                    ActivityResultContracts.RequestMultiplePermissions()
+                ) { result ->
+                    val granted = result[Manifest.permission.ACCESS_FINE_LOCATION] == true ||
+                        result[Manifest.permission.ACCESS_COARSE_LOCATION] == true
+                    clusterViewModel.onLocationPermissionResult(granted)
+                }
+
+                LaunchedEffect(Unit) {
+                    if (hasLocationPermission()) {
+                        clusterViewModel.startSpeedUpdates()
+                        clusterViewModel.startWeatherUpdates()
+                    } else {
+                        permissionLauncher.launch(
+                            arrayOf(
+                                Manifest.permission.ACCESS_FINE_LOCATION,
+                                Manifest.permission.ACCESS_COARSE_LOCATION
+                            )
+                        )
+                    }
+                }
+
                 SpeedometerScreen(
-                    data = placeholders,
+                    data = data,
                     onControlCentreClick = {
                         Toast.makeText(
                             this@MainActivity,
@@ -49,6 +82,23 @@ class MainActivity : ComponentActivity() {
     override fun onResume() {
         super.onResume()
         hideSystemBars()
+        if (hasLocationPermission()) {
+            clusterViewModel.startSpeedUpdates()
+            clusterViewModel.startWeatherUpdates()
+        }
+    }
+
+    private fun hasLocationPermission(): Boolean {
+        val fine = ContextCompat.checkSelfPermission(
+            this,
+            Manifest.permission.ACCESS_FINE_LOCATION
+        )
+        val coarse = ContextCompat.checkSelfPermission(
+            this,
+            Manifest.permission.ACCESS_COARSE_LOCATION
+        )
+        return fine == PackageManager.PERMISSION_GRANTED ||
+            coarse == PackageManager.PERMISSION_GRANTED
     }
 
     private fun configureFullscreen() {
