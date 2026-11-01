@@ -38,14 +38,15 @@ import com.ultraviolette.navigator.ui.theme.ClusterUiFont
 import com.ultraviolette.navigator.ui.theme.clusterColors
 
 /** Outer inset for left rail start / right rail end (inner side stays 10.dp). */
-private val EdgePad = 16.dp
+internal val SideMetricsEdgePad = 16.dp
+private val EdgePad = SideMetricsEdgePad
 /** Soft radius on wing corners (matches MetricPanelShape). */
 private val WingCorner = 4.dp
 /** Thin grey stem under avg / time — narrower so the block reads as shrinking. */
 private val PanelStemWidth = 56.dp
-/** Bottom wing under EFF / R3 — taller grey band, runs into the combat notch. */
+/** Bottom wing under EFF / SPD — taller grey band, runs into the combat notch. */
 private val ShrinkWingHeight = 40.dp
-/** Outer inset (screen short edge) for each EFF / R3 wing group. */
+/** Outer inset (screen short edge) for each EFF / SPD wing group. */
 private val FooterWingOuterPad = 32.dp
 /** Inner inset (toward combat notch) — tighter so groups sit a touch closer. */
 private val FooterWingInnerPad = 16.dp
@@ -53,8 +54,6 @@ private val FooterBottomPad = 8.dp
 private val FooterMarkHeight = 16.dp
 private val FooterLabelSize = 15.sp
 private val FooterStripeWidth = 120.dp
-/** Fits 3 skewed R3 cells (~2.05×h each, ~0.48×h gaps) plus lean overhang. */
-private val FooterCellsWidth = 124.dp
 /** Even gap between label / value / sub / underline on each side stack. */
 private val MetricStackGap = 6.dp
 /** Shared avg + trip-time figure — one size, no clip (Klapt trim/clip was cutting digits). */
@@ -306,7 +305,7 @@ fun LeftShrinkWing(modifier: Modifier = Modifier) {
 }
 
 /**
- * Grey band under R3: mirrored LeftShrinkWing into the combat notch plateau.
+ * Grey band under SPD: mirrored LeftShrinkWing into the combat notch plateau.
  * Top aligns with notch top-right; slant runs down-left into the plateau.
  * Soft lower corners where the hill meets the combat flat / notch.
  */
@@ -339,7 +338,7 @@ fun RightShrinkWing(modifier: Modifier = Modifier) {
 }
 
 /**
- * EFF / R3 sit in the light band above the combat flat, each group centered
+ * EFF / SPD sit in the light band above the combat flat, each group centered
  * in its wing between the short edge and the notch.
  */
 @Composable
@@ -393,7 +392,7 @@ fun CombatWingFooters(
             horizontalArrangement = Arrangement.Center
         ) {
             Text(
-                text = data.regenLevel,
+                text = data.disciplineLabel,
                 color = colors.muted,
                 fontFamily = ClusterUiFont,
                 fontSize = FooterLabelSize,
@@ -401,13 +400,16 @@ fun CombatWingFooters(
                 letterSpacing = 1.2.sp
             )
             Spacer(Modifier.width(12.dp))
-            RegenCells(
-                filled = data.regenCells,
+            DiagonalStripes(
                 modifier = Modifier
-                    .width(FooterCellsWidth)
+                    .width(FooterStripeWidth)
                     .height(FooterMarkHeight),
-                fillColor = colors.value.copy(alpha = 0.88f),
-                emptyColor = colors.value.copy(alpha = 0.40f)
+                filled = data.disciplineBars,
+                active = data.disciplineActive,
+                mirrorSlant = true,
+                fillColor = accent,
+                emptyColor = colors.stripe,
+                offColor = colors.combat
             )
         }
     }

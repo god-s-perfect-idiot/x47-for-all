@@ -45,7 +45,7 @@ This builds, installs, launches, settles, smoke-checks focus, and writes `docs/h
 | Avg / trip time | `avgSpeedKmh`, `tripTimeText` |
 | Status pill | `timeText`, `batteryPercent`, `signalBars`, `wifiOn` / `wifiBars` (live) |
 | Lean / weather | `leanAngleDeg`; `ambientTempC` + condition from Open-Meteo (GPS) |
-| Mode bar | `rideMode`, `regenLevel`, `efficiencyLabel`; EFF bars from riding-smoothness (IMU + GPS) |
+| Mode bar | `rideMode`, `efficiencyLabel`, `disciplineLabel`; EFF = riding-smoothness (IMU + GPS), SPD = speed-discipline (GPS) |
 | Icons | `tractionControlOn`, `absOn` |
 
 Reference screenshot: `docs/uv-x47-reference.png`

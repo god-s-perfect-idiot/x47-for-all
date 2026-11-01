@@ -4,20 +4,15 @@ import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.geometry.Offset
-import androidx.compose.ui.geometry.RoundRect
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.Matrix
 import androidx.compose.ui.graphics.Outline
 import androidx.compose.ui.graphics.Path
-import androidx.compose.ui.graphics.PathFillType
 import androidx.compose.ui.graphics.Shape
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.drawscope.Stroke
-import androidx.compose.ui.graphics.drawscope.withTransform
 import androidx.compose.ui.unit.Density
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.LayoutDirection
@@ -168,6 +163,8 @@ fun DiagonalStripes(
     filled: Int = 0,
     total: Int = 10,
     active: Boolean = false,
+    /** When true, ticks lean the opposite way (SPD mirrors EFF). */
+    mirrorSlant: Boolean = false,
     fillColor: Color? = null,
     emptyColor: Color? = null,
     offColor: Color? = null
@@ -186,6 +183,8 @@ fun DiagonalStripes(
         val pad = stroke * 0.55f + slant * 0.35f
         val usable = (size.width - pad * 2f).coerceAtLeast(stroke)
         val spacing = if (total > 1) usable / (total - 1) else 0f
+        val topBias = if (mirrorSlant) slant * 0.5f else -slant * 0.5f
+        val botBias = -topBias
         for (i in 0 until total) {
             val x = pad + i * spacing
             val color = when {
@@ -195,72 +194,11 @@ fun DiagonalStripes(
             }
             drawLine(
                 color = color,
-                start = Offset(x - slant * 0.5f, 0f),
-                end = Offset(x + slant * 0.5f, size.height),
+                start = Offset(x + topBias, 0f),
+                end = Offset(x + botBias, size.height),
                 strokeWidth = stroke,
                 cap = StrokeCap.Round
             )
-        }
-    }
-}
-
-/**
- * Three regen cells (user R3 reference).
- * Rounded parallelograms (~30° lean) with two short twin-pillar cutouts.
- */
-@Composable
-fun RegenCells(
-    filled: Int,
-    modifier: Modifier = Modifier,
-    fillColor: Color? = null,
-    emptyColor: Color? = null
-) {
-    val colors = clusterColors()
-    val resolvedFill = fillColor ?: colors.onBar
-    val resolvedEmpty = emptyColor ?: colors.onBar.copy(alpha = 0.28f)
-    Canvas(modifier = modifier) {
-        val count = 3
-        val h = size.height
-        // Match screenshot aspect: cell ~2.05× tall, gap ~0.48× tall, ~30° lean.
-        val cellW = h * 2.05f
-        val gap = h * 0.48f
-        val skewX = -0.56f // x' = x + skewX*y → left edge shifts left toward bottom
-        val leanPad = kotlin.math.abs(skewX) * h
-        val corner = CornerRadius(h * 0.22f, h * 0.22f)
-        val slotW = (cellW * 0.12f).coerceAtLeast(1.6.dp.toPx())
-        val slotH = h * 0.38f
-        val slotTop = (h - slotH) / 2f
-        val slotCenters = floatArrayOf(0.37f, 0.63f)
-        val totalW = count * cellW + (count - 1) * gap
-        val originX = leanPad + ((size.width - leanPad - totalW) / 2f).coerceAtLeast(0f)
-        val skewMatrix = Matrix().apply { values[Matrix.SkewX] = skewX }
-
-        for (i in 0 until count) {
-            val left = originX + i * (cellW + gap)
-            val color = if (i < filled) resolvedFill else resolvedEmpty
-            // Upright round-rect + twin slots, then skew into a parallelogram.
-            withTransform({
-                translate(left = left, top = 0f)
-                transform(skewMatrix)
-            }) {
-                val path = Path().apply {
-                    fillType = PathFillType.EvenOdd
-                    addRoundRect(RoundRect(0f, 0f, cellW, h, corner))
-                    for (t in slotCenters) {
-                        val sx = cellW * t - slotW / 2f
-                        addRoundRect(
-                            RoundRect(
-                                left = sx,
-                                top = slotTop,
-                                right = sx + slotW,
-                                bottom = slotTop + slotH,
-                                cornerRadius = CornerRadius(slotW * 0.35f, slotW * 0.35f)
-                            )
-                        )
-                    }
-                }
-                drawPath(path, color)
-            }
         }
     }
 }

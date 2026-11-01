@@ -49,9 +49,9 @@ Mark each row **pass** / **fail** / **n/a**. Failures need a one-line fix hypoth
 |---|--------|
 | B1 | Gray bottom bridge / wings span as in `BottomModeBar` / wing comps |
 | B2 | COMBAT / mode notch centered |
-| B3 | Regen (R#) + EFF bars visible; footer pads avoid clip |
+| B3 | SPD + EFF 10-bar stripes visible; footer pads avoid clip |
 | B4 | No floating cards / accidental Compose preview chrome |
 
 ## Placeholders (first-build data)
 
-Defaults live in `ClusterPlaceholders` / `design-facts.md`. Unless the task changed data, expect COMBAT-like values (speed `---`, avg `---`, trip time `0:00`, battery `72`, regen `R3`, etc.).
+Defaults live in `ClusterPlaceholders` / `design-facts.md`. Unless the task changed data, expect COMBAT-like values (speed `---`, avg `---`, trip time `0:00`, battery `72`, EFF/SPD bars off while idle, etc.).

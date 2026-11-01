@@ -41,7 +41,9 @@ data class WeatherSample(
     val tempC: Int,
     val condition: WeatherCondition,
     /** True when local solar day — picks sun vs moon for clear skies. */
-    val isDay: Boolean
+    val isDay: Boolean,
+    /** 10 m wind speed in km/h, rounded. */
+    val windSpeedKmh: Int
 )
 
 /**
@@ -145,7 +147,8 @@ class WeatherRepository(context: Context) {
                 "https://api.open-meteo.com/v1/forecast" +
                     "?latitude=${"%.4f".format(latitude)}" +
                     "&longitude=${"%.4f".format(longitude)}" +
-                    "&current=temperature_2m,weather_code,is_day" +
+                    "&current=temperature_2m,weather_code,is_day,wind_speed_10m" +
+                    "&wind_speed_unit=kmh" +
                     "&timezone=auto"
             )
             val connection = (url.openConnection() as HttpURLConnection).apply {
@@ -174,10 +177,16 @@ class WeatherRepository(context: Context) {
             val tempC = current.getDouble("temperature_2m").roundToInt()
             val code = current.getInt("weather_code")
             val isDay = current.optInt("is_day", 1) == 1
+            val wind = if (current.has("wind_speed_10m")) {
+                current.getDouble("wind_speed_10m").roundToInt().coerceIn(0, 200)
+            } else {
+                0
+            }
             return WeatherSample(
                 tempC = tempC.coerceIn(-40, 55),
                 condition = conditionFor(code),
-                isDay = isDay
+                isDay = isDay,
+                windSpeedKmh = wind
             )
         }
 

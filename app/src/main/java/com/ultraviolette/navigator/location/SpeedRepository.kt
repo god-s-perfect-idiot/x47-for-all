@@ -25,6 +25,7 @@ import kotlinx.coroutines.channels.awaitClose
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.callbackFlow
 import kotlin.math.abs
+import kotlin.math.roundToInt
 import kotlin.math.sqrt
 import android.location.LocationRequest as PlatformLocationRequest
 
@@ -36,7 +37,9 @@ data class SpeedSample(
     /** True when the dial should leave idle chrome. */
     val isMoving: Boolean = false,
     /** True while a recent GNSS-quality fix is available. */
-    val gpsAvailable: Boolean = false
+    val gpsAvailable: Boolean = false,
+    /** MSL altitude in meters when GNSS reports it; null when unknown. */
+    val altitudeM: Int? = null
 )
 
 /**
@@ -78,6 +81,7 @@ class SpeedRepository(context: Context) {
         var lastGpsElapsedMs = 0L
         var shownKmh = 0f
         var gpsAvailable = false
+        var altitudeM: Int? = null
         var motionEnergy = 0f
         var stillTicks = 0
 
@@ -90,7 +94,8 @@ class SpeedRepository(context: Context) {
                     speedKmh = if (moving) shownKmh else 0f,
                     deltaMeters = deltaMeters,
                     isMoving = moving,
-                    gpsAvailable = gpsAvailable
+                    gpsAvailable = gpsAvailable,
+                    altitudeM = altitudeM
                 )
             )
         }
@@ -152,6 +157,11 @@ class SpeedRepository(context: Context) {
 
             val maxAcc = if (gnss) MAX_GPS_ACCURACY_M else MAX_FALLBACK_ACCURACY_M
             if (location.hasAccuracy() && location.accuracy > maxAcc) return
+
+            // Prefer GNSS altitude; keep the last good reading across coarse fixes.
+            if (gnss && location.hasAltitude()) {
+                altitudeM = location.altitude.roundToInt()
+            }
 
             val odoDelta = if (gnss) {
                 consumeDistanceDelta(location, lastDistanceLocation, maxAcc) { next ->

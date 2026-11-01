@@ -37,14 +37,16 @@ data class ClusterPlaceholders(
     val ambientTempC: String = "--",
     val weatherCondition: WeatherCondition = WeatherCondition.CLEAR,
     val weatherIsDay: Boolean = true,
+    /** 10 m wind speed — overwritten live from Open-Meteo when location is available. */
+    val windSpeedText: String = "--",
+    /** GNSS MSL altitude — overwritten live from SpeedRepository when available. */
+    val altitudeText: String = "--",
     /** Absolute lean degrees for the numeric readout — live from tilt sensor. */
     val leanAngleDeg: String = "0",
     /** Signed lean for the gauge needle (+ screen-right / − screen-left). */
     val leanAngleSignedDeg: Float = 0f,
     /** Display label for the bottom mode notch — GLIDE / COMBAT / BALLISTIC. */
     val rideMode: String = RideMode.COMBAT,
-    val regenLevel: String = "R3",
-    val regenCells: Int = 3,
     /**
      * EFF filled stripe count 0–10 — live riding-smoothness score from
      * [com.ultraviolette.navigator.sensor.RidingSmoothnessRepository].
@@ -56,6 +58,16 @@ data class ClusterPlaceholders(
      * the ride accent, left remainder stay light grey.
      */
     val efficiencyActive: Boolean = false,
+    /**
+     * SPD filled stripe count 0–10 — live speed-discipline score from
+     * [com.ultraviolette.navigator.sensor.SpeedDisciplineRepository].
+     */
+    val disciplineBars: Int = 0,
+    /**
+     * False while idle / stopped — SPD ticks render darker grey.
+     * True only while moving with a score — filled ticks use the ride accent.
+     */
+    val disciplineActive: Boolean = false,
     /** Cellular bars 0–5 — overwritten live from ConnectivityRepository. */
     val signalBars: Int = 0,
     /** True while associated to Wi‑Fi — overwritten live. */
@@ -65,6 +77,7 @@ data class ClusterPlaceholders(
     /** True while a Bluetooth device is connected — overwritten live; hide glyph when false. */
     val bluetoothOn: Boolean = false,
     val efficiencyLabel: String = "EFF",
+    val disciplineLabel: String = "SPD",
     /** Ambient-light driven — true when the cluster should use the inverted dark palette. */
     val isDarkMode: Boolean = false
 ) {
@@ -80,6 +93,12 @@ object RideMode {
     const val BALLISTIC = "BALLISTIC"
 
     private val order = listOf(GLIDE, COMBAT, BALLISTIC)
+
+    /** Canonical label, or null when [raw] is not a known mode. */
+    fun canonicalize(raw: String?): String? {
+        if (raw.isNullOrBlank()) return null
+        return order.firstOrNull { it.equals(raw, ignoreCase = true) }
+    }
 
     fun next(current: String): String {
         val idx = order.indexOfFirst { it.equals(current, ignoreCase = true) }

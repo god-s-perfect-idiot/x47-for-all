@@ -35,7 +35,7 @@ import com.ultraviolette.navigator.ui.theme.clusterColors
 /**
  * Full-width thin dark mode strip. Flat wings reach the short edges;
  * center trapezoid rises slightly for the ride-mode label.
- * EFF / R3 span the light wing band above the flat, stopping at the notch.
+ * EFF / SPD span the light wing band above the flat, stopping at the notch.
  * Accent color (green / blue / red) shows while moving; gray when parked.
  */
 val CombatFlatHeight: Dp = 16.dp

@@ -98,7 +98,7 @@ fun SpeedometerScreen(
                     .fillMaxWidth()
             ) {
                 Row(Modifier.fillMaxSize()) {
-                    // Stems continue through EFF / R3 wings; stop above the dark combat flat.
+                    // Stems continue through EFF / SPD wings; stop above the dark combat flat.
                     LeftMetricsColumn(
                         data = data,
                         accent = accent.label,

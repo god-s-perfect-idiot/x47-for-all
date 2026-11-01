@@ -12,6 +12,7 @@ import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxHeight
@@ -35,10 +36,12 @@ import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.drawscope.withTransform
 import androidx.compose.ui.graphics.vector.PathParser
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.ultraviolette.navigator.model.ClusterPlaceholders
+import com.ultraviolette.navigator.model.RideMode
 import com.ultraviolette.navigator.ui.theme.ClusterGreen
 import com.ultraviolette.navigator.ui.theme.ClusterOrange
 import com.ultraviolette.navigator.ui.theme.ClusterRed
@@ -75,6 +78,28 @@ fun TopStatusBar(
             modifier = Modifier.fillMaxSize()
         )
 
+        // Far top-left — live wind from Open-Meteo
+        CornerMetric(
+            label = "wind",
+            value = data.windSpeedText,
+            labelColor = accent.label,
+            alignEnd = false,
+            modifier = Modifier
+                .align(Alignment.CenterStart)
+                .padding(start = SideMetricsEdgePad, bottom = 4.dp)
+        )
+
+        // Far top-right — live GNSS altitude
+        CornerMetric(
+            label = "alt",
+            value = data.altitudeText,
+            labelColor = accent.label,
+            alignEnd = true,
+            modifier = Modifier
+                .align(Alignment.CenterEnd)
+                .padding(end = SideMetricsEdgePad, bottom = 4.dp)
+        )
+
         Row(
             modifier = Modifier.fillMaxSize(),
             verticalAlignment = Alignment.CenterVertically,
@@ -90,6 +115,7 @@ fun TopStatusBar(
                 horizontalArrangement = Arrangement.spacedBy(6.dp, Alignment.End)
             ) {
                 RegenChevron(
+                    rideMode = data.rideMode,
                     color = accent.primary,
                     modifier = Modifier.size(24.dp)
                 )
@@ -167,6 +193,41 @@ fun TopStatusBar(
                 )
             }
         }
+    }
+}
+
+/** Compact corner readout — label over value, matching side-rail typography. */
+@Composable
+private fun CornerMetric(
+    label: String,
+    value: String,
+    labelColor: Color,
+    alignEnd: Boolean,
+    modifier: Modifier = Modifier
+) {
+    val colors = clusterColors()
+    val align = if (alignEnd) Alignment.End else Alignment.Start
+    Column(
+        modifier = modifier,
+        horizontalAlignment = align,
+        verticalArrangement = Arrangement.spacedBy((-3).dp)
+    ) {
+        Text(
+            text = label,
+            color = labelColor,
+            fontFamily = ClusterUiFont,
+            fontSize = 10.sp,
+            fontWeight = FontWeight.Bold,
+            textAlign = if (alignEnd) TextAlign.End else TextAlign.Start
+        )
+        Text(
+            text = value,
+            color = colors.text,
+            fontFamily = ClusterUiFont,
+            fontSize = 13.sp,
+            fontWeight = FontWeight.SemiBold,
+            textAlign = if (alignEnd) TextAlign.End else TextAlign.Start
+        )
     }
 }
 
@@ -328,21 +389,59 @@ private const val PhoneGlyphViewBox = 16f
 private const val PhoneGlyphPath =
     "M3 2a2 2 0 0 1 2-2h6a2 2 0 0 1 2 2v12a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2zm6 11a1 1 0 1 0-2 0a1 1 0 0 0 2 0"
 
+/**
+ * Mode-shaped regen / nav chevron.
+ * Combat keeps the stock Phosphor arrow; Glide narrows the tip (longer);
+ * Ballistic widens the tip (shorter).
+ */
 @Composable
 private fun RegenChevron(
+    rideMode: String,
     color: Color,
     modifier: Modifier = Modifier
 ) {
     val path = remember { PathParser().parsePathString(RegenChevronPath).toPath() }
-    Canvas(modifier) {
-        val scale = size.minDimension / RegenChevronViewBox
-        withTransform({
-            scale(scale, scale, pivot = Offset.Zero)
-        }) {
-            drawPath(path, color)
+    val tipScale = remember(rideMode) { regenChevronTipScale(rideMode) }
+    AnimatedContent(
+        targetState = tipScale,
+        transitionSpec = {
+            val spec = tween<Float>(RegenChevronMorphMs, easing = FastOutSlowInEasing)
+            (
+                fadeIn(spec) + scaleIn(initialScale = 0.88f, animationSpec = spec)
+                ) togetherWith (
+                fadeOut(spec) + scaleOut(targetScale = 1.06f, animationSpec = spec)
+                ) using SizeTransform(clip = false)
+        },
+        label = "regenChevron",
+        modifier = modifier
+    ) { (scaleX, scaleY) ->
+        Canvas(Modifier.fillMaxSize()) {
+            // Fit the anisotropically scaled glyph inside the box without clipping.
+            val fit = size.minDimension / (RegenChevronViewBox * maxOf(scaleX, scaleY))
+            val cx = size.width / 2f
+            val cy = size.height / 2f
+            withTransform({
+                translate(cx, cy)
+                scale(fit * scaleX, fit * scaleY, pivot = Offset.Zero)
+                translate(-RegenChevronViewBox / 2f, -RegenChevronViewBox / 2f)
+            }) {
+                drawPath(path, color)
+            }
         }
     }
 }
+
+/**
+ * Non-uniform scale of the stock arrow changes tip angle:
+ * squeeze X / stretch Y → sharper, longer; stretch X / squeeze Y → blunter, shorter.
+ */
+private fun regenChevronTipScale(rideMode: String): Pair<Float, Float> = when {
+    rideMode.equals(RideMode.GLIDE, ignoreCase = true) -> 0.68f to 1.28f
+    rideMode.equals(RideMode.BALLISTIC, ignoreCase = true) -> 1.32f to 0.72f
+    else -> 1f to 1f
+}
+
+private const val RegenChevronMorphMs = 280
 
 /** Phosphor navigation-arrow — 256 viewBox (upward chevron mark). */
 private const val RegenChevronViewBox = 256f
