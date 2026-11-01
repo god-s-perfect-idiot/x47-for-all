@@ -10,13 +10,18 @@ data class ClusterAccent(
     val label: Color
 )
 
+/**
+ * Ride-mode accent: GLIDE green, COMBAT blue, BALLISTIC red.
+ * Drives side labels, control centre, top chevron, and the moving mode bar.
+ */
 @Composable
 fun rememberClusterAccent(data: ClusterPlaceholders): ClusterAccent {
     return remember(data.rideMode) {
-        if (data.isBallistic) {
-            ClusterAccent(primary = ClusterRed, label = ClusterRed)
-        } else {
-            ClusterAccent(primary = ClusterBlue, label = ClusterBlue.copy(alpha = 0.85f))
+        val color = when {
+            data.isGlide -> ClusterGlide
+            data.isBallistic -> ClusterBallistic
+            else -> ClusterBlue
         }
+        ClusterAccent(primary = color, label = color.copy(alpha = 0.85f))
     }
 }

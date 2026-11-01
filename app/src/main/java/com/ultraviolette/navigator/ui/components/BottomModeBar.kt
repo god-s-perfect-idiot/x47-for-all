@@ -20,6 +20,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.drawscope.withTransform
 import androidx.compose.ui.graphics.vector.PathParser
@@ -33,8 +34,9 @@ import com.ultraviolette.navigator.ui.theme.clusterColors
 
 /**
  * Full-width thin dark mode strip. Flat wings reach the short edges;
- * center trapezoid rises slightly for the COMBAT label.
+ * center trapezoid rises slightly for the ride-mode label.
  * EFF / R3 span the light wing band above the flat, stopping at the notch.
+ * Accent color (green / blue / red) shows while moving; gray when parked.
  */
 val CombatFlatHeight: Dp = 16.dp
 val CombatNotchRise: Dp = 24.dp
@@ -47,18 +49,19 @@ val CombatNotchTopHalf: Dp = 100.dp
 val CombatHangBelow: Dp = 0.dp
 val CombatRiseAbove: Dp = CombatNotchRise
 
-/** Ride-mode color morph duration (parked combat → moving blue). */
+/** Ride-mode color morph duration (parked gray → moving accent). */
 internal const val RideModeTransitionMs = 360
 
 @Composable
 fun CombatModeNotch(
     rideMode: String,
     isMoving: Boolean = false,
+    accent: Color = ClusterBlue,
     modifier: Modifier = Modifier
 ) {
     val colors = clusterColors()
     val barColor by animateColorAsState(
-        targetValue = if (isMoving) ClusterBlue else colors.combat,
+        targetValue = if (isMoving) accent else colors.combat,
         animationSpec = tween(RideModeTransitionMs, easing = FastOutSlowInEasing),
         label = "combatBarColor"
     )

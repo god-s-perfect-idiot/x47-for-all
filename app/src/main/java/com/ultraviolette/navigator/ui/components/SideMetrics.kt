@@ -150,7 +150,7 @@ fun LeftMetricsColumn(
                 )
         ) {
             Text(
-                text = "avg",
+                text = "avg speed",
                 color = accent,
                 style = tightStyle(
                     fontSize = SideLabelSize,
@@ -345,6 +345,7 @@ fun RightShrinkWing(modifier: Modifier = Modifier) {
 @Composable
 fun CombatWingFooters(
     data: ClusterPlaceholders,
+    accent: Color,
     modifier: Modifier = Modifier
 ) {
     val colors = clusterColors()
@@ -365,8 +366,11 @@ fun CombatWingFooters(
                 modifier = Modifier
                     .width(FooterStripeWidth)
                     .height(FooterMarkHeight),
-                color = colors.stripe,
-                count = data.efficiencyBars
+                filled = data.efficiencyBars,
+                active = data.efficiencyActive,
+                fillColor = accent,
+                emptyColor = colors.stripe,
+                offColor = colors.combat
             )
             Spacer(Modifier.width(12.dp))
             Text(

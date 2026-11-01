@@ -39,7 +39,9 @@ import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.ultraviolette.navigator.model.ClusterPlaceholders
+import com.ultraviolette.navigator.ui.theme.ClusterGreen
 import com.ultraviolette.navigator.ui.theme.ClusterOrange
+import com.ultraviolette.navigator.ui.theme.ClusterRed
 import com.ultraviolette.navigator.ui.theme.ClusterUiFont
 import com.ultraviolette.navigator.ui.theme.TopBarSoCFill
 import com.ultraviolette.navigator.ui.theme.clusterColors
@@ -78,7 +80,7 @@ fun TopStatusBar(
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.Center
         ) {
-            // Left gray notch — R3 / chevron / M
+            // Left gray notch — chevron + phone badge, flush to the center notch
             Row(
                 modifier = Modifier
                     .width(SideBottomWidth + TopBarHeight)
@@ -87,19 +89,14 @@ fun TopStatusBar(
                 verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.spacedBy(6.dp, Alignment.End)
             ) {
-                Text(
-                    text = data.regenLevel,
-                    color = colors.text,
-                    fontFamily = ClusterUiFont,
-                    fontSize = 14.sp,
-                    fontWeight = FontWeight.Bold
-                )
                 RegenChevron(
                     color = accent.primary,
-                    filled = data.isBallistic,
-                    modifier = Modifier.size(10.dp, 9.dp)
+                    modifier = Modifier.size(24.dp)
                 )
-                ModeBadgeM()
+                ModeBadge(
+                    isMoving = data.isMoving,
+                    phoneTempHigh = data.phoneTempHigh
+                )
             }
 
             // Center light notch — time / SoC / signal
@@ -274,52 +271,83 @@ private const val ChargingBoltViewBox = 24f
 private const val ChargingBoltPath =
     "M17.168 8H13l.806-4.835A1 1 0 0 0 12.819 2H7.667a1 1 0 0 0-.986.835l-1.667 10A1 1 0 0 0 6 14h4v8l8.01-12.459A1 1 0 0 0 17.168 8"
 
+/**
+ * Phone badge in the left top-bar notch — always the phone glyph.
+ * Off (parked): gray fill + white glyph.
+ * Moving + cool phone: green fill + white glyph.
+ * Moving + hot phone: red fill + white glyph.
+ */
 @Composable
-private fun ModeBadgeM() {
+private fun ModeBadge(
+    isMoving: Boolean,
+    phoneTempHigh: Boolean,
+    modifier: Modifier = Modifier
+) {
     val colors = clusterColors()
+    val fill = when {
+        !isMoving -> colors.modeBadgeFill
+        phoneTempHigh -> ClusterRed
+        else -> ClusterGreen
+    }
     Box(
-        modifier = Modifier.size(16.dp),
+        modifier = modifier.size(22.dp),
         contentAlignment = Alignment.Center
     ) {
         Canvas(Modifier.fillMaxSize()) {
-            val r = 2.2.dp.toPx()
+            val r = 3.dp.toPx()
             drawRoundRect(
-                color = colors.modeBadgeFill,
+                color = fill,
                 cornerRadius = androidx.compose.ui.geometry.CornerRadius(r, r)
             )
         }
-        Text(
-            text = "M",
-            color = colors.modeBadgeText,
-            fontFamily = ClusterUiFont,
-            fontSize = 9.sp,
-            fontWeight = FontWeight.Bold
+        PhoneGlyph(
+            color = Color.White,
+            modifier = Modifier.size(11.dp)
         )
     }
 }
 
 @Composable
-private fun RegenChevron(
+private fun PhoneGlyph(
     color: Color,
-    filled: Boolean,
     modifier: Modifier = Modifier
 ) {
+    val path = remember { PathParser().parsePathString(PhoneGlyphPath).toPath() }
     Canvas(modifier) {
-        val path = Path().apply {
-            moveTo(size.width / 2f, 0f)
-            lineTo(size.width, size.height)
-            lineTo(0f, size.height)
-            close()
-        }
-        if (filled) {
-            drawPath(path, color)
-        } else {
-            drawPath(path, color, style = Stroke(1.8.dp.toPx()))
-            // solid chevron look for combat
+        val scale = size.minDimension / PhoneGlyphViewBox
+        withTransform({
+            scale(scale, scale, pivot = Offset.Zero)
+        }) {
             drawPath(path, color)
         }
     }
 }
+
+/** Smartphone glyph — 16 viewBox (home-button phone silhouette). */
+private const val PhoneGlyphViewBox = 16f
+private const val PhoneGlyphPath =
+    "M3 2a2 2 0 0 1 2-2h6a2 2 0 0 1 2 2v12a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2zm6 11a1 1 0 1 0-2 0a1 1 0 0 0 2 0"
+
+@Composable
+private fun RegenChevron(
+    color: Color,
+    modifier: Modifier = Modifier
+) {
+    val path = remember { PathParser().parsePathString(RegenChevronPath).toPath() }
+    Canvas(modifier) {
+        val scale = size.minDimension / RegenChevronViewBox
+        withTransform({
+            scale(scale, scale, pivot = Offset.Zero)
+        }) {
+            drawPath(path, color)
+        }
+    }
+}
+
+/** Phosphor navigation-arrow — 256 viewBox (upward chevron mark). */
+private const val RegenChevronViewBox = 256f
+private const val RegenChevronPath =
+    "M236.2 218.31A15.88 15.88 0 0 1 224 224a16.2 16.2 0 0 1-5.37-.92l-79.95-27a4 4 0 0 1-2.72-3.79V120a8 8 0 0 0-8.53-8a8.19 8.19 0 0 0-7.47 8.26v72a4 4 0 0 1-2.72 3.79l-79.95 27a16 16 0 0 1-19.26-22.92l95.97-168a16 16 0 0 1 27.89 0L237.9 200.1a15.89 15.89 0 0 1-1.7 18.21"
 
 @Composable
 private fun CellularSignal(bars: Int, modifier: Modifier = Modifier) {

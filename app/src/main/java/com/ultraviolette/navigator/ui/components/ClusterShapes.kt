@@ -155,25 +155,46 @@ fun BatteryBar(percent: Int, modifier: Modifier = Modifier) {
     }
 }
 
-/** EFF footer: 10 thick diagonal ticks with open gaps (ref-2). */
+/**
+ * EFF footer: always 10 diagonal ticks (ref-2).
+ *
+ * - [active] false → every tick [offColor] (darker grey, idle / no score)
+ * - [active] true → fills grow right-to-left: rightmost [filled] ticks
+ *   use [fillColor] (ride accent), left remainder [emptyColor] (light grey)
+ */
 @Composable
 fun DiagonalStripes(
     modifier: Modifier = Modifier,
-    color: Color? = null,
-    count: Int = 10
+    filled: Int = 0,
+    total: Int = 10,
+    active: Boolean = false,
+    fillColor: Color? = null,
+    emptyColor: Color? = null,
+    offColor: Color? = null
 ) {
-    val stripeColor = color ?: clusterColors().crosshair
+    val colors = clusterColors()
+    val on = fillColor ?: ClusterBlue
+    val empty = emptyColor ?: colors.stripe
+    val off = offColor ?: colors.combat
+    val lit = filled.coerceIn(0, total)
+    // Left side stays empty; lit ticks occupy the right edge.
+    val firstLit = total - lit
     Canvas(modifier = modifier) {
         val stroke = 4.5.dp.toPx()
         val slant = size.height * 0.48f
         // End pad keeps first/last strokes fully inside after slant.
         val pad = stroke * 0.55f + slant * 0.35f
         val usable = (size.width - pad * 2f).coerceAtLeast(stroke)
-        val spacing = if (count > 1) usable / (count - 1) else 0f
-        for (i in 0 until count) {
+        val spacing = if (total > 1) usable / (total - 1) else 0f
+        for (i in 0 until total) {
             val x = pad + i * spacing
+            val color = when {
+                !active -> off
+                i >= firstLit -> on
+                else -> empty
+            }
             drawLine(
-                color = stripeColor,
+                color = color,
                 start = Offset(x - slant * 0.5f, 0f),
                 end = Offset(x + slant * 0.5f, size.height),
                 strokeWidth = stroke,

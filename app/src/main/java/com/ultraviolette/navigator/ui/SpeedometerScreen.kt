@@ -3,6 +3,8 @@ package com.ultraviolette.navigator.ui
 import android.os.Build
 import android.view.RoundedCorner
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -12,6 +14,7 @@ import androidx.compose.foundation.layout.displayCutout
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
 import androidx.compose.runtime.Composable
@@ -50,6 +53,7 @@ private val SideRailWidth = 145.dp
 fun SpeedometerScreen(
     data: ClusterPlaceholders = ClusterPlaceholders(),
     onControlCentreClick: () -> Unit = {},
+    onRideModeClick: () -> Unit = {},
     modifier: Modifier = Modifier
 ) {
     val colors = clusterColors()
@@ -134,12 +138,28 @@ fun SpeedometerScreen(
                 CombatModeNotch(
                     rideMode = data.rideMode,
                     isMoving = data.isMoving,
+                    accent = accent.primary,
                     modifier = Modifier.align(Alignment.BottomCenter)
                 )
 
                 CombatWingFooters(
                     data = data,
+                    accent = accent.primary,
                     modifier = Modifier.align(Alignment.BottomCenter)
+                )
+
+                // Above wing footers so the full bottom strip receives taps.
+                val modeTapSource = remember { MutableInteractionSource() }
+                Box(
+                    Modifier
+                        .align(Alignment.BottomCenter)
+                        .fillMaxWidth()
+                        .height(CombatBarHeight)
+                        .clickable(
+                            interactionSource = modeTapSource,
+                            indication = null,
+                            onClick = onRideModeClick
+                        )
                 )
             }
         }

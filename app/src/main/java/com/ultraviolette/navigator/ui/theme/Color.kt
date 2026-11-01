@@ -120,8 +120,14 @@ val ClusterText = Color(0xFF1A1D22)
 val ClusterValue = Color(0xFF22262C)
 
 val ClusterBlue = Color(0xFF2F9BFF)
+/** Soft status red (lean tick / hot phone badge). */
 val ClusterRed = Color(0xFFE03131)
+/** BALLISTIC ride-mode accent — darker than [ClusterRed]. */
+val ClusterBallistic = Color(0xFFB01E1E)
+/** Soft status green (phone badge / side battery). */
 val ClusterGreen = Color(0xFF2FCB72)
+/** GLIDE ride-mode accent — darker than [ClusterGreen]. */
+val ClusterGlide = Color(0xFF0F6B38)
 val ClusterOrange = Color(0xFFE89A3A)
 /** SoC fill — stays green in both modes. */
 val TopBarSoCFill = Color(0xFF1A9A52)

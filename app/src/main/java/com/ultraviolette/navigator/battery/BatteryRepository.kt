@@ -14,11 +14,18 @@ data class BatterySample(
     /** Device charge level 0–100. */
     val percent: Int,
     /** True while plugged in / actively charging (or full on charger). */
-    val isCharging: Boolean = false
+    val isCharging: Boolean = false,
+    /**
+     * Battery pack temperature in °C ([BatteryManager.EXTRA_TEMPERATURE] / 10).
+     * Used as the phone-temp proxy for the top-bar mode badge.
+     */
+    val temperatureC: Float = 0f,
+    /** True when [temperatureC] is at or above [HOT_TEMP_C]. */
+    val isHot: Boolean = false
 )
 
 /**
- * System battery SoC stream for the cluster top-bar percent + green fill.
+ * System battery SoC + temperature stream for the cluster top bar.
  */
 class BatteryRepository(context: Context) {
     private val appContext = context.applicationContext
@@ -38,7 +45,20 @@ class BatteryRepository(context: Context) {
             val isCharging = plugged != 0 ||
                 status == BatteryManager.BATTERY_STATUS_CHARGING ||
                 status == BatteryManager.BATTERY_STATUS_FULL
-            trySend(BatterySample(percent = percent, isCharging = isCharging))
+            // EXTRA_TEMPERATURE is tenths of a degree Celsius.
+            val temperatureC =
+                intent.getIntExtra(BatteryManager.EXTRA_TEMPERATURE, Int.MIN_VALUE)
+                    .takeIf { it != Int.MIN_VALUE }
+                    ?.div(10f)
+                    ?: 0f
+            trySend(
+                BatterySample(
+                    percent = percent,
+                    isCharging = isCharging,
+                    temperatureC = temperatureC,
+                    isHot = temperatureC >= HOT_TEMP_C
+                )
+            )
         }
 
         val receiver = object : BroadcastReceiver() {
@@ -60,5 +80,10 @@ class BatteryRepository(context: Context) {
         awaitClose {
             appContext.unregisterReceiver(receiver)
         }
+    }
+
+    private companion object {
+        /** Battery pack °C at which the top-bar phone badge flips to red while moving. */
+        const val HOT_TEMP_C = 45f
     }
 }

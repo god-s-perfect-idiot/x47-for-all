@@ -9,8 +9,10 @@ import com.ultraviolette.navigator.connectivity.ConnectivityRepository
 import com.ultraviolette.navigator.location.OdometerStore
 import com.ultraviolette.navigator.location.SpeedRepository
 import com.ultraviolette.navigator.model.ClusterPlaceholders
+import com.ultraviolette.navigator.model.RideMode
 import com.ultraviolette.navigator.sensor.AmbientLightRepository
 import com.ultraviolette.navigator.sensor.LeanAngleRepository
+import com.ultraviolette.navigator.sensor.RidingSmoothnessRepository
 import com.ultraviolette.navigator.sensor.formatLeanAngleDigits
 import com.ultraviolette.navigator.time.ClockRepository
 import com.ultraviolette.navigator.weather.WeatherRepository
@@ -29,6 +31,7 @@ class ClusterViewModel(application: Application) : AndroidViewModel(application)
     private val batteryRepository = BatteryRepository(application)
     private val leanAngleRepository = LeanAngleRepository(application)
     private val ambientLightRepository = AmbientLightRepository(application)
+    private val ridingSmoothnessRepository = RidingSmoothnessRepository(application)
     private val connectivityRepository = ConnectivityRepository(application)
     private val weatherRepository = WeatherRepository(application)
     private val clockRepository = ClockRepository()
@@ -56,6 +59,7 @@ class ClusterViewModel(application: Application) : AndroidViewModel(application)
     private var batteryJob: Job? = null
     private var leanJob: Job? = null
     private var ambientLightJob: Job? = null
+    private var smoothnessJob: Job? = null
     private var connectivityJob: Job? = null
     private var weatherJob: Job? = null
     private var clockJob: Job? = null
@@ -66,6 +70,7 @@ class ClusterViewModel(application: Application) : AndroidViewModel(application)
         startBatteryUpdates()
         startLeanUpdates()
         startAmbientLightUpdates()
+        startSmoothnessUpdates()
         startConnectivityUpdates()
         startClockUpdates()
     }
@@ -97,6 +102,13 @@ class ClusterViewModel(application: Application) : AndroidViewModel(application)
         }
     }
 
+    /** Bottom mode bar tap — GLIDE → COMBAT → BALLISTIC → GLIDE. */
+    fun cycleRideMode() {
+        _data.update { current ->
+            current.copy(rideMode = RideMode.next(current.rideMode))
+        }
+    }
+
     fun startSpeedUpdates() {
         if (!speedRepository.hasLocationPermission()) return
         if (speedJob?.isActive == true) return
@@ -106,6 +118,7 @@ class ClusterViewModel(application: Application) : AndroidViewModel(application)
                 // Repository owns the stationary gate — do not second-guess with a low threshold.
                 val wasMoving = isMoving
                 isMoving = sample.isMoving
+                ridingSmoothnessRepository.updateSpeed(sample.speedKmh, sample.isMoving)
 
                 if (sample.isMoving && sample.deltaMeters > 0f) {
                     tripMeters += sample.deltaMeters
@@ -188,7 +201,8 @@ class ClusterViewModel(application: Application) : AndroidViewModel(application)
                 _data.update { current ->
                     current.copy(
                         batteryPercent = sample.percent,
-                        isCharging = sample.isCharging
+                        isCharging = sample.isCharging,
+                        phoneTempHigh = sample.isHot
                     )
                 }
             }
@@ -218,6 +232,27 @@ class ClusterViewModel(application: Application) : AndroidViewModel(application)
                 _data.update { current ->
                     if (current.isDarkMode == sample.isDark) current
                     else current.copy(isDarkMode = sample.isDark)
+                }
+            }
+        }
+    }
+
+    fun startSmoothnessUpdates() {
+        if (smoothnessJob?.isActive == true) return
+
+        smoothnessJob = viewModelScope.launch {
+            ridingSmoothnessRepository.observeSmoothness().collect { sample ->
+                _data.update { current ->
+                    if (current.efficiencyBars == sample.bars &&
+                        current.efficiencyActive == sample.confident
+                    ) {
+                        current
+                    } else {
+                        current.copy(
+                            efficiencyBars = sample.bars,
+                            efficiencyActive = sample.confident
+                        )
+                    }
                 }
             }
         }
@@ -288,6 +323,7 @@ class ClusterViewModel(application: Application) : AndroidViewModel(application)
                 idle.copy(
                     batteryPercent = current.batteryPercent,
                     isCharging = current.isCharging,
+                    phoneTempHigh = current.phoneTempHigh,
                     timeText = current.timeText,
                     odometerKm = formatDistanceKm(totalMeters),
                     tripKm = formatDistanceKm(tripMeters),
@@ -303,9 +339,13 @@ class ClusterViewModel(application: Application) : AndroidViewModel(application)
                     wifiOn = current.wifiOn,
                     wifiBars = current.wifiBars,
                     bluetoothOn = current.bluetoothOn,
+                    efficiencyBars = current.efficiencyBars,
+                    efficiencyActive = current.efficiencyActive,
+                    rideMode = current.rideMode,
                     gpsAvailable = false
                 )
             }
+            ridingSmoothnessRepository.updateSpeed(0f, isMoving = false)
         }
     }
 
@@ -323,6 +363,8 @@ class ClusterViewModel(application: Application) : AndroidViewModel(application)
         leanJob = null
         ambientLightJob?.cancel()
         ambientLightJob = null
+        smoothnessJob?.cancel()
+        smoothnessJob = null
         stopConnectivityUpdates()
         batteryJob?.cancel()
         batteryJob = null

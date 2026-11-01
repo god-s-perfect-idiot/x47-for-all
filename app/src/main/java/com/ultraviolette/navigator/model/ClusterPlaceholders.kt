@@ -26,6 +26,11 @@ data class ClusterPlaceholders(
     val batteryPercent: Int = 72,
     /** True while device is on charger — overwritten live from BatteryManager. */
     val isCharging: Boolean = false,
+    /**
+     * True when phone battery pack is hot (≥ 45 °C) — live from BatteryManager.
+     * Drives the top-bar mode badge red while [isMoving].
+     */
+    val phoneTempHigh: Boolean = false,
     /** Device wall clock — overwritten live from ClockRepository. */
     val timeText: String = "06:30 pm",
     /** Outdoor temp — overwritten live from Open-Meteo when location is available. */
@@ -36,10 +41,21 @@ data class ClusterPlaceholders(
     val leanAngleDeg: String = "0",
     /** Signed lean for the gauge needle (+ screen-right / − screen-left). */
     val leanAngleSignedDeg: Float = 0f,
-    val rideMode: String = "COMBAT",
+    /** Display label for the bottom mode notch — GLIDE / COMBAT / BALLISTIC. */
+    val rideMode: String = RideMode.COMBAT,
     val regenLevel: String = "R3",
     val regenCells: Int = 3,
-    val efficiencyBars: Int = 10,
+    /**
+     * EFF filled stripe count 0–10 — live riding-smoothness score from
+     * [com.ultraviolette.navigator.sensor.RidingSmoothnessRepository].
+     */
+    val efficiencyBars: Int = 0,
+    /**
+     * False while idle / stopped — EFF ticks render darker grey.
+     * True only while moving with a score — right-side filled ticks use
+     * the ride accent, left remainder stay light grey.
+     */
+    val efficiencyActive: Boolean = false,
     /** Cellular bars 0–5 — overwritten live from ConnectivityRepository. */
     val signalBars: Int = 0,
     /** True while associated to Wi‑Fi — overwritten live. */
@@ -52,5 +68,21 @@ data class ClusterPlaceholders(
     /** Ambient-light driven — true when the cluster should use the inverted dark palette. */
     val isDarkMode: Boolean = false
 ) {
-    val isBallistic: Boolean get() = rideMode.equals("BALLISTIC", ignoreCase = true)
+    val isGlide: Boolean get() = rideMode.equals(RideMode.GLIDE, ignoreCase = true)
+    val isCombat: Boolean get() = rideMode.equals(RideMode.COMBAT, ignoreCase = true)
+    val isBallistic: Boolean get() = rideMode.equals(RideMode.BALLISTIC, ignoreCase = true)
+}
+
+/** Tap-cycle order on the bottom mode bar: Glide → Combat → Ballistic. */
+object RideMode {
+    const val GLIDE = "GLIDE"
+    const val COMBAT = "COMBAT"
+    const val BALLISTIC = "BALLISTIC"
+
+    private val order = listOf(GLIDE, COMBAT, BALLISTIC)
+
+    fun next(current: String): String {
+        val idx = order.indexOfFirst { it.equals(current, ignoreCase = true) }
+        return if (idx < 0) COMBAT else order[(idx + 1) % order.size]
+    }
 }
