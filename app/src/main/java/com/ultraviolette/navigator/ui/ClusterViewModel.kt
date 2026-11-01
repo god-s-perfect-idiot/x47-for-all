@@ -10,6 +10,8 @@ import com.ultraviolette.navigator.location.OdometerStore
 import com.ultraviolette.navigator.location.SpeedRepository
 import com.ultraviolette.navigator.location.TripStore
 import com.ultraviolette.navigator.model.BikeNameStore
+import com.ultraviolette.navigator.model.BrandTheme
+import com.ultraviolette.navigator.model.BrandThemeStore
 import com.ultraviolette.navigator.model.ClusterPlaceholders
 import com.ultraviolette.navigator.model.RideMode
 import com.ultraviolette.navigator.model.RideModeStore
@@ -44,6 +46,7 @@ class ClusterViewModel(application: Application) : AndroidViewModel(application)
     private val odometerStore = OdometerStore(application)
     private val rideModeStore = RideModeStore(application)
     private val bikeNameStore = BikeNameStore(application)
+    private val brandThemeStore = BrandThemeStore(application)
     private val tripStore = TripStore(application)
     private val idle = ClusterPlaceholders()
 
@@ -53,6 +56,8 @@ class ClusterViewModel(application: Application) : AndroidViewModel(application)
     private val savedRideMode: String = rideModeStore.readRideMode()
     /** Last chosen bike display name — loaded from disk so reopen keeps identity. */
     private val savedBikeName: String = bikeNameStore.readBikeName()
+    /** Last chosen brand pack — loaded from disk so reopen keeps UV/KTM/BMW/Aprilia. */
+    private val savedBrandTheme: String = brandThemeStore.readBrandTheme()
     /** Current trip meters — continues until the ride is finalized into history. */
     private var tripMeters: Double = 0.0
     /** Moving-only trip duration (paused while speed is 0). */
@@ -69,7 +74,8 @@ class ClusterViewModel(application: Application) : AndroidViewModel(application)
             odometerKm = formatDistanceKm(totalMeters),
             tripKm = formatDistanceKm(tripMeters),
             rideMode = savedRideMode,
-            bikeName = savedBikeName
+            bikeName = savedBikeName,
+            brandTheme = savedBrandTheme
         )
     )
     val data: StateFlow<ClusterPlaceholders> = _data.asStateFlow()
@@ -151,6 +157,13 @@ class ClusterViewModel(application: Application) : AndroidViewModel(application)
         if (trimmed.isEmpty()) return
         bikeNameStore.writeBikeName(trimmed)
         _data.update { current -> current.copy(bikeName = trimmed) }
+    }
+
+    /** Control Centre → Settings → Themes — switch brand accent pack. */
+    fun setBrandTheme(theme: String) {
+        val canonical = BrandTheme.canonicalize(theme) ?: return
+        brandThemeStore.writeBrandTheme(canonical)
+        _data.update { current -> current.copy(brandTheme = canonical) }
     }
 
     fun startSpeedUpdates() {
@@ -523,6 +536,8 @@ class ClusterViewModel(application: Application) : AndroidViewModel(application)
                     disciplineBars = current.disciplineBars,
                     disciplineActive = current.disciplineActive,
                     rideMode = current.rideMode,
+                    bikeName = current.bikeName,
+                    brandTheme = current.brandTheme,
                     gpsAvailable = false
                 )
             }

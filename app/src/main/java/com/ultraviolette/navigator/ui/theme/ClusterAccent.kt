@@ -11,17 +11,14 @@ data class ClusterAccent(
 )
 
 /**
- * Ride-mode accent: GLIDE green, COMBAT blue, BALLISTIC red.
- * Drives side labels, control centre, top chevron, and the moving mode bar.
+ * Ride-mode accent remapped through the active brand pack
+ * (UV / KTM / BMW / Aprilia). Drives side labels, control centre,
+ * top chevron, and the moving mode bar.
  */
 @Composable
 fun rememberClusterAccent(data: ClusterPlaceholders): ClusterAccent {
-    return remember(data.rideMode) {
-        val color = when {
-            data.isGlide -> ClusterGlide
-            data.isBallistic -> ClusterBallistic
-            else -> ClusterBlue
-        }
+    return remember(data.rideMode, data.brandTheme) {
+        val color = brandRideAccent(data.brandTheme, data.rideMode)
         ClusterAccent(primary = color, label = color.copy(alpha = 0.85f))
     }
 }

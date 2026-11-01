@@ -57,9 +57,11 @@ fun SpeedometerScreen(
     onRideModeClick: () -> Unit = {},
     onEndRide: () -> Unit = {},
     onBikeNameChange: (String) -> Unit = {},
+    onBrandThemeChange: (String) -> Unit = {},
     modifier: Modifier = Modifier
 ) {
     var pane by remember { mutableStateOf(ClusterPane.Speedometer) }
+    var themesImmersive by remember { mutableStateOf(false) }
     BackHandler(enabled = pane != ClusterPane.Speedometer) {
         pane = when (pane) {
             ClusterPane.Trips, ClusterPane.Settings -> ClusterPane.ControlCentre
@@ -70,6 +72,7 @@ fun SpeedometerScreen(
 
     ClusterFrame(
         data = data,
+        showTopBar = !themesImmersive,
         modifier = modifier
     ) {
         AnimatedContent(
@@ -122,6 +125,8 @@ fun SpeedometerScreen(
                     data = data,
                     onClose = { pane = ClusterPane.ControlCentre },
                     onBikeNameChange = onBikeNameChange,
+                    onBrandThemeChange = onBrandThemeChange,
+                    onThemesActiveChange = { themesImmersive = it },
                     modifier = Modifier.fillMaxSize()
                 )
                 ClusterPane.Speedometer -> SpeedometerBody(

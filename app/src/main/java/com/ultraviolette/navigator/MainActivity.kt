@@ -91,6 +91,7 @@ class MainActivity : ComponentActivity() {
                     onRideModeClick = { clusterViewModel.cycleRideMode() },
                     onEndRide = { clusterViewModel.endCurrentTrip() },
                     onBikeNameChange = { clusterViewModel.setBikeName(it) },
+                    onBrandThemeChange = { clusterViewModel.setBrandTheme(it) },
                     modifier = Modifier.fillMaxSize()
                 )
             }

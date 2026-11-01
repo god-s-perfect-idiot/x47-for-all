@@ -495,3 +495,71 @@ class ChamferShape(
         return Outline.Generic(path)
     }
 }
+
+/** Which corner of [BladeShape] stays sharp (radius 0). */
+enum class BladeSharpCorner {
+    TopStart,
+    TopEnd,
+    BottomStart,
+    BottomEnd
+}
+
+/**
+ * Theme / brand tile outline — one fully sharp 90° corner, three diamond-cut
+ * (chamfered) corners. No rounded bends.
+ */
+class BladeShape(
+    private val cut: Dp = 22.dp,
+    private val sharp: BladeSharpCorner = BladeSharpCorner.TopStart
+) : Shape {
+    override fun createOutline(
+        size: Size,
+        layoutDirection: LayoutDirection,
+        density: Density
+    ): Outline {
+        val c = with(density) { cut.toPx() }
+            .coerceAtMost(minOf(size.width, size.height) / 3f)
+        val path = Path().apply {
+            // Top-start
+            if (sharp == BladeSharpCorner.TopStart) {
+                moveTo(0f, 0f)
+            } else {
+                moveTo(c, 0f)
+            }
+
+            // Top edge → top-end
+            if (sharp == BladeSharpCorner.TopEnd) {
+                lineTo(size.width, 0f)
+            } else {
+                lineTo(size.width - c, 0f)
+                lineTo(size.width, c)
+            }
+
+            // Right edge → bottom-end
+            if (sharp == BladeSharpCorner.BottomEnd) {
+                lineTo(size.width, size.height)
+            } else {
+                lineTo(size.width, size.height - c)
+                lineTo(size.width - c, size.height)
+            }
+
+            // Bottom edge → bottom-start
+            if (sharp == BladeSharpCorner.BottomStart) {
+                lineTo(0f, size.height)
+            } else {
+                lineTo(c, size.height)
+                lineTo(0f, size.height - c)
+            }
+
+            // Left edge → top-start
+            if (sharp == BladeSharpCorner.TopStart) {
+                lineTo(0f, 0f)
+            } else {
+                lineTo(0f, c)
+                lineTo(c, 0f)
+            }
+            close()
+        }
+        return Outline.Generic(path)
+    }
+}

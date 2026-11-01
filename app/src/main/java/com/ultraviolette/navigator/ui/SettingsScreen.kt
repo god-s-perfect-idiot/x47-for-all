@@ -32,6 +32,8 @@ import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -43,12 +45,17 @@ import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.SolidColor
+import androidx.compose.ui.graphics.StrokeCap
+import androidx.compose.ui.graphics.StrokeJoin
+import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.drawscope.withTransform
 import androidx.compose.ui.graphics.vector.PathParser
 import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.text.TextStyle
+import androidx.compose.ui.text.font.FontStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.KeyboardCapitalization
@@ -57,12 +64,24 @@ import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.ultraviolette.navigator.model.BikeNameStore
+import com.ultraviolette.navigator.model.BrandTheme
 import com.ultraviolette.navigator.model.ClusterPlaceholders
+import com.ultraviolette.navigator.ui.components.BladeShape
+import com.ultraviolette.navigator.ui.components.BladeSharpCorner
 import com.ultraviolette.navigator.ui.components.ChamferShape
 import com.ultraviolette.navigator.ui.components.clusterTileEnter
 import com.ultraviolette.navigator.ui.components.clusterTileEnterLinearDelayMs
+import com.ultraviolette.navigator.ui.theme.ArialBrandFont
+import com.ultraviolette.navigator.ui.theme.BrandPackColors
+import com.ultraviolette.navigator.ui.theme.BmwMotorradFont
+import com.ultraviolette.navigator.ui.theme.BmwStripeCyan
+import com.ultraviolette.navigator.ui.theme.BmwStripeNavy
+import com.ultraviolette.navigator.ui.theme.BmwStripeRed
 import com.ultraviolette.navigator.ui.theme.ClusterUiFont
+import com.ultraviolette.navigator.ui.theme.DashfordFont
+import com.ultraviolette.navigator.ui.theme.SpaceportOneFont
 import com.ultraviolette.navigator.ui.theme.UltravioletteNavigatorTheme
+import com.ultraviolette.navigator.ui.theme.brandPackColors
 import com.ultraviolette.navigator.ui.theme.clusterColors
 import com.ultraviolette.navigator.ui.theme.rememberClusterAccent
 
@@ -70,18 +89,26 @@ private enum class SettingsPage { Menu, Themes, Vehicle }
 
 /**
  * Settings hub opened from the Control Centre SETTINGS tile.
- * Hosts Themes (placeholder) and Vehicle (bike name editor).
+ * Hosts Themes (brand packs) and Vehicle (bike name editor).
  */
 @Composable
 fun SettingsContent(
     data: ClusterPlaceholders,
     onClose: () -> Unit,
     onBikeNameChange: (String) -> Unit,
+    onBrandThemeChange: (String) -> Unit = {},
+    onThemesActiveChange: (Boolean) -> Unit = {},
     modifier: Modifier = Modifier
 ) {
     var page by remember { mutableStateOf(SettingsPage.Menu) }
     BackHandler(enabled = page != SettingsPage.Menu) {
         page = SettingsPage.Menu
+    }
+    LaunchedEffect(page) {
+        onThemesActiveChange(page == SettingsPage.Themes)
+    }
+    DisposableEffect(Unit) {
+        onDispose { onThemesActiveChange(false) }
     }
 
     AnimatedContent(
@@ -113,13 +140,16 @@ fun SettingsContent(
     ) { current ->
         when (current) {
             SettingsPage.Menu -> SettingsMenuPage(
+                brandTheme = data.brandTheme,
                 onClose = onClose,
                 onThemesClick = { page = SettingsPage.Themes },
                 onVehicleClick = { page = SettingsPage.Vehicle },
                 modifier = Modifier.fillMaxSize()
             )
             SettingsPage.Themes -> ThemesPage(
+                selectedTheme = data.brandTheme,
                 onClose = { page = SettingsPage.Menu },
+                onThemeSelect = onBrandThemeChange,
                 modifier = Modifier.fillMaxSize()
             )
             SettingsPage.Vehicle -> VehiclePage(
@@ -134,6 +164,7 @@ fun SettingsContent(
 
 @Composable
 private fun SettingsMenuPage(
+    brandTheme: String,
     onClose: () -> Unit,
     onThemesClick: () -> Unit,
     onVehicleClick: () -> Unit,
@@ -141,6 +172,7 @@ private fun SettingsMenuPage(
 ) {
     val colors = clusterColors()
     val gap = 6.dp
+    val themeLabel = BrandTheme.meta(brandTheme).label
 
     Column(
         modifier = modifier
@@ -163,7 +195,7 @@ private fun SettingsMenuPage(
         ) {
             SettingsNavTile(
                 title = "THEMES",
-                subtitle = "Coming soon",
+                subtitle = themeLabel,
                 onClick = onThemesClick,
                 modifier = Modifier
                     .weight(1f)
@@ -185,11 +217,22 @@ private fun SettingsMenuPage(
 
 @Composable
 private fun ThemesPage(
+    selectedTheme: String,
     onClose: () -> Unit,
+    onThemeSelect: (String) -> Unit,
     modifier: Modifier = Modifier
 ) {
     val colors = clusterColors()
     val gap = 6.dp
+    val selectedLabel = BrandTheme.meta(selectedTheme).label
+    val catalog = BrandTheme.catalog
+    // Sharp corner faces the grid center on each quadrant.
+    val sharpCorners = listOf(
+        BladeSharpCorner.BottomEnd,
+        BladeSharpCorner.BottomStart,
+        BladeSharpCorner.TopEnd,
+        BladeSharpCorner.TopStart
+    )
 
     Column(
         modifier = modifier
@@ -200,18 +243,299 @@ private fun ThemesPage(
     ) {
         SettingsHeaderRow(
             title = "THEMES",
-            subtitle = "Accent packs",
+            subtitle = selectedLabel,
             onClose = onClose,
             enterOrder = 0
         )
-        SettingsPanel(
+        Column(
             Modifier
-                .fillMaxSize()
-                .clusterTileEnter(clusterTileEnterLinearDelayMs(2))
+                .fillMaxWidth()
+                .weight(1f),
+            verticalArrangement = Arrangement.spacedBy(gap)
         ) {
-            Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                // Left empty intentionally — themes land later.
+            repeat(2) { row ->
+                Row(
+                    Modifier
+                        .fillMaxWidth()
+                        .weight(1f),
+                    horizontalArrangement = Arrangement.spacedBy(gap)
+                ) {
+                    repeat(2) { col ->
+                        val index = row * 2 + col
+                        val meta = catalog[index]
+                        BrandThemeTile(
+                            meta = meta,
+                            pack = brandPackColors(meta.id),
+                            sharp = sharpCorners[index],
+                            selected = meta.id.equals(selectedTheme, ignoreCase = true),
+                            onClick = { onThemeSelect(meta.id) },
+                            modifier = Modifier
+                                .weight(1f)
+                                .fillMaxHeight()
+                                .clusterTileEnter(clusterTileEnterLinearDelayMs(2 + index))
+                        )
+                    }
+                }
             }
+        }
+    }
+}
+
+@Composable
+private fun BrandThemeTile(
+    meta: BrandTheme.Meta,
+    pack: BrandPackColors,
+    sharp: BladeSharpCorner,
+    selected: Boolean,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier
+) {
+    val shape = remember(sharp) { BladeShape(cut = 22.dp, sharp = sharp) }
+    val ring = when {
+        selected && meta.id == BrandTheme.UV -> Color(0xFFFFFFFF)
+        selected && meta.id == BrandTheme.KTM -> Color(0xFF000000)
+        selected && meta.id == BrandTheme.BMW -> BmwStripeNavy
+        selected -> Color(0xFFFFFFFF)
+        else -> Color.Transparent
+    }
+
+    Box(
+        modifier = modifier
+            .clip(shape)
+            .background(pack.tileBackground)
+            .then(
+                if (selected) Modifier.border(2.2.dp, ring, shape)
+                else Modifier
+            )
+            .clickable(
+                interactionSource = remember { MutableInteractionSource() },
+                indication = null,
+                onClick = onClick
+            )
+            .padding(horizontal = 14.dp, vertical = 12.dp)
+    ) {
+        when (meta.id) {
+            BrandTheme.UV -> UvThemeTileContent(pack = pack, selected = selected)
+            BrandTheme.KTM -> KtmThemeTileContent(pack = pack, selected = selected)
+            BrandTheme.BMW -> BmwThemeTileContent(pack = pack, selected = selected)
+            else -> ApriliaThemeTileContent(pack = pack, selected = selected)
+        }
+    }
+}
+
+@Composable
+private fun UvThemeTileContent(pack: BrandPackColors, selected: Boolean) {
+    Column(
+        Modifier.fillMaxSize(),
+        verticalArrangement = Arrangement.SpaceBetween
+    ) {
+        Text(
+            text = if (selected) "ACTIVE" else "THEME",
+            color = pack.tileMuted,
+            fontFamily = DashfordFont,
+            fontSize = 10.sp,
+            fontWeight = FontWeight.Bold,
+            letterSpacing = 1.4.sp
+        )
+        Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
+            Text(
+                text = "UV",
+                color = pack.tileForeground,
+                fontFamily = DashfordFont,
+                fontSize = 42.sp,
+                fontWeight = FontWeight.Bold,
+                letterSpacing = 2.0.sp,
+                maxLines = 1
+            )
+            Text(
+                text = "ULTRAVIOLETTE",
+                color = pack.tileMuted,
+                fontFamily = DashfordFont,
+                fontSize = 11.sp,
+                fontWeight = FontWeight.SemiBold,
+                letterSpacing = 2.4.sp,
+                maxLines = 1
+            )
+        }
+    }
+}
+
+@Composable
+private fun KtmThemeTileContent(pack: BrandPackColors, selected: Boolean) {
+    val markStyle = TextStyle(
+        color = pack.tileForeground,
+        fontFamily = SpaceportOneFont,
+        fontSize = 56.sp,
+        fontWeight = FontWeight.Black,
+        fontStyle = FontStyle.Italic,
+        letterSpacing = 1.2.sp
+    )
+    Column(
+        Modifier.fillMaxSize(),
+        verticalArrangement = Arrangement.SpaceBetween
+    ) {
+        Text(
+            text = if (selected) "ACTIVE" else "THEME",
+            color = pack.tileMuted,
+            fontFamily = SpaceportOneFont,
+            fontSize = 11.sp,
+            fontWeight = FontWeight.Bold,
+            letterSpacing = 1.6.sp
+        )
+        Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
+            // Stroke underlay fattens Spaceport One for the KTM wordmark.
+            Box {
+                Text(
+                    text = "KTM",
+                    style = markStyle.copy(
+                        drawStyle = Stroke(
+                            width = 5.5f,
+                            miter = 10f,
+                            join = StrokeJoin.Round,
+                            cap = StrokeCap.Round
+                        )
+                    ),
+                    maxLines = 1
+                )
+                Text(text = "KTM", style = markStyle, maxLines = 1)
+            }
+            Text(
+                text = "READY TO RACE",
+                color = pack.tileMuted,
+                fontFamily = SpaceportOneFont,
+                fontSize = 12.sp,
+                fontWeight = FontWeight.Bold,
+                letterSpacing = 1.8.sp,
+                maxLines = 1
+            )
+        }
+    }
+}
+
+@Composable
+private fun BmwThemeTileContent(pack: BrandPackColors, selected: Boolean) {
+    Column(
+        Modifier.fillMaxSize(),
+        verticalArrangement = Arrangement.SpaceBetween
+    ) {
+        Row(
+            Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.Top
+        ) {
+            Text(
+                text = if (selected) "ACTIVE" else "THEME",
+                color = pack.tileMuted,
+                fontFamily = BmwMotorradFont,
+                fontSize = 10.sp,
+                fontWeight = FontWeight.Bold,
+                letterSpacing = 1.4.sp
+            )
+            BmwMStripes(Modifier.height(36.dp).width(28.dp))
+        }
+        Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
+            // B / M / W each take one Motorrad M stripe color.
+            Row(verticalAlignment = Alignment.Bottom) {
+                Text(
+                    text = "B",
+                    color = BmwStripeCyan,
+                    fontFamily = BmwMotorradFont,
+                    fontSize = 52.sp,
+                    fontWeight = FontWeight.Bold,
+                    letterSpacing = 0.sp,
+                    maxLines = 1
+                )
+                Text(
+                    text = "M",
+                    color = BmwStripeNavy,
+                    fontFamily = BmwMotorradFont,
+                    fontSize = 52.sp,
+                    fontWeight = FontWeight.Bold,
+                    letterSpacing = 0.sp,
+                    maxLines = 1
+                )
+                Text(
+                    text = "W",
+                    color = BmwStripeRed,
+                    fontFamily = BmwMotorradFont,
+                    fontSize = 52.sp,
+                    fontWeight = FontWeight.Bold,
+                    letterSpacing = 0.sp,
+                    maxLines = 1
+                )
+            }
+            Text(
+                text = "MOTORRAD",
+                color = pack.tileForeground,
+                fontFamily = BmwMotorradFont,
+                fontSize = 14.sp,
+                fontWeight = FontWeight.Bold,
+                letterSpacing = 1.6.sp,
+                maxLines = 1
+            )
+        }
+    }
+}
+
+@Composable
+private fun ApriliaThemeTileContent(pack: BrandPackColors, selected: Boolean) {
+    // Pin RACING to the bottom so the oversized wordmark can't clip it.
+    Box(Modifier.fillMaxSize()) {
+        Text(
+            text = if (selected) "ACTIVE" else "THEME",
+            color = pack.tileMuted,
+            fontFamily = ArialBrandFont,
+            fontSize = 10.sp,
+            fontWeight = FontWeight.Bold,
+            letterSpacing = 1.4.sp,
+            modifier = Modifier.align(Alignment.TopStart)
+        )
+        Column(
+            Modifier.align(Alignment.BottomStart),
+            verticalArrangement = Arrangement.spacedBy(2.dp)
+        ) {
+            Text(
+                text = "aprilia",
+                color = pack.tileForeground,
+                fontFamily = ArialBrandFont,
+                fontSize = 58.sp,
+                fontWeight = FontWeight.Black,
+                letterSpacing = (-1.0).sp,
+                maxLines = 1
+            )
+            Text(
+                text = "RACING",
+                color = pack.tileMuted,
+                fontFamily = ArialBrandFont,
+                fontSize = 12.sp,
+                fontWeight = FontWeight.Bold,
+                letterSpacing = 2.2.sp,
+                maxLines = 1
+            )
+        }
+    }
+}
+
+/** BMW Motorrad M-style tricolor stripes. */
+@Composable
+private fun BmwMStripes(modifier: Modifier = Modifier) {
+    Canvas(modifier) {
+        val stripeW = size.width / 2.7f
+        val skew = size.width * 0.34f
+        val gap = size.width * 0.05f
+        val colors = listOf(BmwStripeCyan, BmwStripeNavy, BmwStripeRed)
+        colors.forEachIndexed { i, color ->
+            val x0 = i * (stripeW + gap)
+            drawPath(
+                Path().apply {
+                    moveTo(x0 + skew, 0f)
+                    lineTo(x0 + skew + stripeW, 0f)
+                    lineTo(x0 + stripeW, size.height)
+                    lineTo(x0, size.height)
+                    close()
+                },
+                color = color
+            )
         }
     }
 }
@@ -519,7 +843,8 @@ private fun SettingsPreview() {
         SettingsContent(
             data = ClusterPlaceholders(bikeName = BikeNameStore.DEFAULT_BIKE_NAME),
             onClose = {},
-            onBikeNameChange = {}
+            onBikeNameChange = {},
+            onBrandThemeChange = {}
         )
     }
 }

@@ -81,7 +81,9 @@ data class ClusterPlaceholders(
     /** Ambient-light driven — true when the cluster should use the inverted dark palette. */
     val isDarkMode: Boolean = false,
     /** Bike display name on the Control Centre identity tile — persisted via BikeNameStore. */
-    val bikeName: String = BikeNameStore.DEFAULT_BIKE_NAME
+    val bikeName: String = BikeNameStore.DEFAULT_BIKE_NAME,
+    /** Brand accent pack — UV / KTM / BMW / APRILIA — persisted via BrandThemeStore. */
+    val brandTheme: String = BrandTheme.DEFAULT
 ) {
     val isGlide: Boolean get() = rideMode.equals(RideMode.GLIDE, ignoreCase = true)
     val isCombat: Boolean get() = rideMode.equals(RideMode.COMBAT, ignoreCase = true)
