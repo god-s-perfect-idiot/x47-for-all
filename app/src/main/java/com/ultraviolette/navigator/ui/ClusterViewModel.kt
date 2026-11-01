@@ -70,11 +70,8 @@ class ClusterViewModel(application: Application) : AndroidViewModel(application)
 
         speedJob = viewModelScope.launch {
             speedRepository.observeSpeed().collect { sample ->
-                isMoving = if (isMoving) {
-                    sample.speedKmh >= EXIT_MOVING_KMH
-                } else {
-                    sample.speedKmh >= ENTER_MOVING_KMH
-                }
+                // Repository owns the stationary gate — do not second-guess with a low threshold.
+                isMoving = sample.isMoving
 
                 if (sample.deltaMeters > 0f) {
                     tripMeters += sample.deltaMeters
@@ -84,12 +81,12 @@ class ClusterViewModel(application: Application) : AndroidViewModel(application)
 
                 _data.update { current ->
                     current.copy(
-                        speedKmh = if (isMoving) {
+                        speedKmh = if (sample.isMoving) {
                             formatSpeedDigits(sample.speedKmh.roundToInt())
                         } else {
                             "———"
                         },
-                        isMoving = isMoving,
+                        isMoving = sample.isMoving,
                         odometerKm = formatDistanceKm(totalMeters),
                         tripKm = formatDistanceKm(tripMeters)
                     )
@@ -194,9 +191,6 @@ class ClusterViewModel(application: Application) : AndroidViewModel(application)
     }
 
     private companion object {
-        const val ENTER_MOVING_KMH = 1.5f
-        const val EXIT_MOVING_KMH = 0.7f
-
         fun formatSpeedDigits(kmh: Int): String =
             "%03d".format(kmh.coerceIn(0, 999))
 

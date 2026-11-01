@@ -228,4 +228,4 @@ private val SpeedDigitGap = 32.dp
 private val SpeedDigitHalfHeight = 44.dp
 private val SpeedUnitGap = 12.dp
 private val SpeedUnitHalfHeight = 9.dp
-private const val DigitMorphMs = 280
+private const val DigitMorphMs = 120

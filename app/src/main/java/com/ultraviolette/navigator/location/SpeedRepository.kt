@@ -11,8 +11,8 @@ import android.hardware.SensorManager
 import android.location.Location
 import android.location.LocationListener
 import android.location.LocationManager
+import android.os.Build
 import android.os.Looper
-import android.os.SystemClock
 import androidx.core.content.ContextCompat
 import com.google.android.gms.location.LocationCallback
 import com.google.android.gms.location.LocationRequest
@@ -22,29 +22,25 @@ import com.google.android.gms.location.Priority
 import kotlinx.coroutines.channels.awaitClose
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.callbackFlow
-import kotlin.math.cos
-import kotlin.math.sin
+import kotlin.math.abs
 import kotlin.math.sqrt
+import android.location.LocationRequest as PlatformLocationRequest
 
 data class SpeedSample(
-    /** Display-smoothed fused speed in km/h. */
+    /** Real-time GNSS Doppler speed in km/h (0 when parked / untrustworthy). */
     val speedKmh: Float,
-    /**
-     * Distance advanced since the previous accepted fix, in meters.
-     * From filtered lat/lng — never used for the speed reading.
-     */
-    val deltaMeters: Float = 0f
+    /** Meters advanced since the previous accepted fix (odo/trip). */
+    val deltaMeters: Float = 0f,
+    /** True when the dial should leave idle chrome. */
+    val isMoving: Boolean = false
 )
 
 /**
- * Vehicle-style speed pipeline:
+ * Max-rate GNSS Doppler speed (Maps-style [Location.getSpeed]).
  *
- * GNSS Doppler (1–5 Hz) → primary measurement, weighted by speedAccuracy
- * Accel + gyro (high rate) → short-term predict between fixes
- * 1D Kalman → fuse predict + measure
- * Display EMA → calm integer readout
- *
- * Accelerometer is never open-loop integrated without GNSS re-anchoring.
+ * Subscribes to **both** Play Services fused location and the raw GPS provider
+ * so we get every fix the chip produces. Newest [Location.elapsedRealtimeNanos]
+ * wins. IMU is a still-veto only — never used as velocity.
  */
 class SpeedRepository(context: Context) {
     private val appContext = context.applicationContext
@@ -74,232 +70,182 @@ class SpeedRepository(context: Context) {
             return@callbackFlow
         }
 
-        val kalman = SpeedKalman()
-        val display = SpeedDisplaySmoother()
         var lastDistanceLocation: Location? = null
-        var lastGpsElapsed = 0L
-        var lastEmitElapsed = 0L
-        var bearingRad = 0f
-        var hasBearing = false
-        var gyroRateRad = 0f
+        var lastFixNanos = 0L
+        var shownKmh = 0f
+        var motionEnergy = 0f
+        var stillTicks = 0
 
-        fun publish(deltaMeters: Float = 0f, force: Boolean = false) {
-            val now = SystemClock.elapsedRealtime()
-            if (!force && now - lastEmitElapsed < MIN_EMIT_MS) return
-            lastEmitElapsed = now
+        fun physicallyStill(): Boolean = motionEnergy < STILL_ENERGY && stillTicks >= STILL_TICKS
 
-            val fusedKmh = (kalman.speedMps * 3.6).coerceIn(0.0, MAX_SPEED_KMH.toDouble())
-            val shown = display.smooth(fusedKmh)
-            trySend(SpeedSample(speedKmh = shown, deltaMeters = deltaMeters))
+        fun emit(deltaMeters: Float = 0f) {
+            val moving = shownKmh >= MOVE_KMH
+            trySend(
+                SpeedSample(
+                    speedKmh = if (moving) shownKmh else 0f,
+                    deltaMeters = deltaMeters,
+                    isMoving = moving
+                )
+            )
         }
 
         fun onGps(location: Location) {
-            val deltaMeters = consumeDistanceDelta(location, lastDistanceLocation) { next ->
+            if (location.provider == LocationManager.NETWORK_PROVIDER) return
+
+            // Drop stale / duplicate fixes from dual listeners.
+            val nanos = location.elapsedRealtimeNanos
+            if (nanos > 0L && nanos < lastFixNanos) return
+            if (nanos > 0L) lastFixNanos = nanos
+
+            if (location.hasAccuracy() && location.accuracy > MAX_ACCURACY_M) return
+
+            val odoDelta = consumeDistanceDelta(location, lastDistanceLocation) { next ->
                 lastDistanceLocation = next
             }
 
-            if (location.provider == LocationManager.NETWORK_PROVIDER) {
-                if (deltaMeters > 0f) publish(deltaMeters = deltaMeters, force = true)
-                return
-            }
             if (!location.hasSpeed()) {
-                if (deltaMeters > 0f) publish(deltaMeters = deltaMeters, force = true)
+                if (odoDelta > 0f) emit(odoDelta)
                 return
             }
 
-            val now = SystemClock.elapsedRealtime()
-            if (lastGpsElapsed > 0L) {
-                kalman.inflateForGpsGap((now - lastGpsElapsed) / 1000.0)
-            }
-            lastGpsElapsed = now
-
-            val measured = location.speed.toDouble().coerceAtLeast(0.0)
-            val sigma = if (location.hasSpeedAccuracy()) {
-                location.speedAccuracyMetersPerSecond.toDouble().coerceAtLeast(0.25)
-            } else {
-                DEFAULT_SPEED_SIGMA_MPS
+            var kmh = (location.speed * 3.6f).coerceAtLeast(0f)
+            if (kmh > MAX_SPEED_KMH) {
+                if (odoDelta > 0f) emit(odoDelta)
+                return
             }
 
-            // Untrustworthy Doppler while essentially still → measure as stop.
-            val treatAsStop = measured < STOP_MPS ||
-                (location.hasSpeedAccuracy() && measured < sigma && measured < 2.5)
-
-            if (treatAsStop) {
-                kalman.update(0.0, sigma.coerceAtMost(1.5))
-                if (measured < STOP_MPS && sigma < 2.0) {
-                    kalman.forceStop()
-                    display.reset()
-                }
-                hasBearing = false
-            } else if (sigma > MAX_SPEED_SIGMA_MPS) {
-                // Very uncertain — weak pull only.
-                kalman.update(measured, sigma)
-            } else {
-                kalman.update(measured, sigma)
-                if (location.hasBearing() && measured > BEARING_MIN_MPS) {
-                    bearingRad = Math.toRadians(location.bearing.toDouble()).toFloat()
-                    hasBearing = true
-                }
+            // Only kill readings deep inside uncertainty (Maps still shows low speeds).
+            if (location.hasSpeedAccuracy()) {
+                val sigmaKmh = location.speedAccuracyMetersPerSecond * 3.6f
+                if (kmh > 0f && kmh < sigmaKmh * 0.5f) kmh = 0f
             }
 
-            publish(deltaMeters = deltaMeters, force = true)
+            // Still + low GNSS → parked noise. High GNSS while "still" = cruise.
+            if (physicallyStill() && kmh < PARK_NOISE_CEILING_KMH) {
+                kmh = 0f
+            }
+
+            // Near pass-through — snap to stop, otherwise track hard.
+            shownKmh = when {
+                kmh < STOP_KMH -> 0f
+                shownKmh < STOP_KMH -> kmh
+                else -> shownKmh * (1f - EMA_ALPHA) + kmh * EMA_ALPHA
+            }
+
+            emit(odoDelta)
         }
 
         val fusedCallback = object : LocationCallback() {
             override fun onLocationResult(result: LocationResult) {
+                // Every fix in the batch — not only lastLocation.
                 result.locations.forEach(::onGps)
             }
         }
 
-        // 1–5 Hz GNSS as recommended for vehicle clusters.
-        val request = LocationRequest.Builder(Priority.PRIORITY_HIGH_ACCURACY, GPS_INTERVAL_MS)
-            .setMinUpdateIntervalMillis(GPS_MIN_INTERVAL_MS)
-            .setMaxUpdateDelayMillis(0L)
+        val fusedRequest = LocationRequest.Builder(Priority.PRIORITY_HIGH_ACCURACY, GPS_INTERVAL_MS)
+            .setMinUpdateIntervalMillis(0L)
             .setMinUpdateDistanceMeters(0f)
+            .setMaxUpdateDelayMillis(0L)
             .setWaitForAccurateLocation(false)
             .build()
 
-        var usingFused = false
+        var fusedOk = false
         try {
-            fusedClient.requestLocationUpdates(request, fusedCallback, Looper.getMainLooper())
-            usingFused = true
+            fusedClient.requestLocationUpdates(fusedRequest, fusedCallback, Looper.getMainLooper())
+            fusedOk = true
         } catch (_: Exception) {
-            usingFused = false
+            fusedOk = false
         }
 
+        // Raw GPS in parallel — often delivers faster than fused alone.
         val gpsListener = LocationListener { location -> onGps(location) }
-        if (!usingFused) {
-            try {
+        var gpsOk = false
+        try {
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+                val platformRequest = PlatformLocationRequest.Builder(GPS_INTERVAL_MS)
+                    .setMinUpdateIntervalMillis(0L)
+                    .setMinUpdateDistanceMeters(0f)
+                    .setQuality(PlatformLocationRequest.QUALITY_HIGH_ACCURACY)
+                    .build()
                 locationManager.requestLocationUpdates(
                     LocationManager.GPS_PROVIDER,
-                    GPS_INTERVAL_MS,
+                    platformRequest,
+                    ContextCompat.getMainExecutor(appContext),
+                    gpsListener
+                )
+            } else {
+                locationManager.requestLocationUpdates(
+                    LocationManager.GPS_PROVIDER,
+                    0L,
                     0f,
                     gpsListener,
                     Looper.getMainLooper()
                 )
-            } catch (_: SecurityException) {
-                close()
-                return@callbackFlow
-            } catch (_: IllegalArgumentException) {
-                close()
-                return@callbackFlow
             }
+            gpsOk = true
+        } catch (_: Exception) {
+            gpsOk = false
         }
 
-        val rotationSensor = sensorManager.getDefaultSensor(Sensor.TYPE_ROTATION_VECTOR)
-            ?: sensorManager.getDefaultSensor(Sensor.TYPE_GAME_ROTATION_VECTOR)
-        val linearSensor = sensorManager.getDefaultSensor(Sensor.TYPE_LINEAR_ACCELERATION)
-        val gyroSensor = sensorManager.getDefaultSensor(Sensor.TYPE_GYROSCOPE)
+        if (!fusedOk && !gpsOk) {
+            close()
+            return@callbackFlow
+        }
 
-        val rotationMatrix = FloatArray(9)
-        var hasRotation = false
-        var lastImuNs = 0L
-
+        val linear = sensorManager.getDefaultSensor(Sensor.TYPE_LINEAR_ACCELERATION)
+            ?: sensorManager.getDefaultSensor(Sensor.TYPE_ACCELEROMETER)
         val sensorListener = object : SensorEventListener {
             override fun onSensorChanged(event: SensorEvent) {
-                when (event.sensor.type) {
-                    Sensor.TYPE_GYROSCOPE -> {
-                        if (event.values.size >= 3) {
-                            val gx = event.values[0]
-                            val gy = event.values[1]
-                            val gz = event.values[2]
-                            gyroRateRad = sqrt(gx * gx + gy * gy + gz * gz)
-                        }
-                    }
-                    Sensor.TYPE_ROTATION_VECTOR,
-                    Sensor.TYPE_GAME_ROTATION_VECTOR -> {
-                        SensorManager.getRotationMatrixFromVector(rotationMatrix, event.values)
-                        hasRotation = true
-                    }
-                    Sensor.TYPE_LINEAR_ACCELERATION -> {
-                        if (event.values.size < 3) return
-                        val nowNs = event.timestamp
-                        val dt = if (lastImuNs == 0L) {
-                            0f
-                        } else {
-                            ((nowNs - lastImuNs).coerceAtLeast(0L) / 1_000_000_000f)
-                                .coerceIn(0f, 0.1f)
-                        }
-                        lastImuNs = nowNs
-                        if (dt <= 0f) return
+                if (event.values.size < 3) return
+                val mag = sqrt(
+                    event.values[0] * event.values[0] +
+                        event.values[1] * event.values[1] +
+                        event.values[2] * event.values[2]
+                )
+                val dynamic = if (event.sensor.type == Sensor.TYPE_ACCELEROMETER) {
+                    abs(mag - SensorManager.GRAVITY_EARTH)
+                } else {
+                    mag
+                }
+                motionEnergy = motionEnergy * 0.8f + dynamic * 0.2f
+                if (motionEnergy < STILL_ENERGY) stillTicks++ else stillTicks = 0
 
-                        val nowElapsed = SystemClock.elapsedRealtime()
-                        val sinceGps = if (lastGpsElapsed == 0L) {
-                            Long.MAX_VALUE
-                        } else {
-                            nowElapsed - lastGpsElapsed
-                        }
-
-                        // Only short-term coast between GNSS fixes.
-                        if (sinceGps > IMU_COAST_MS) {
-                            kalman.inflateForGpsGap(dt.toDouble())
-                            publish()
-                            return
-                        }
-
-                        if (!hasRotation || !hasBearing) {
-                            // No travel frame yet — time still advances uncertainty.
-                            kalman.predict(0.0, dt.toDouble())
-                            publish()
-                            return
-                        }
-
-                        val ax = event.values[0]
-                        val ay = event.values[1]
-                        val az = event.values[2]
-                        val east =
-                            rotationMatrix[0] * ax + rotationMatrix[1] * ay + rotationMatrix[2] * az
-                        val north =
-                            rotationMatrix[3] * ax + rotationMatrix[4] * ay + rotationMatrix[5] * az
-                        var aForward = east * sin(bearingRad) + north * cos(bearingRad)
-
-                        // Yawing hard → forward-axis projection is unreliable.
-                        if (gyroRateRad > 0.7f) {
-                            aForward *= 0.25f
-                        }
-
-                        kalman.predict(aForward.toDouble(), dt.toDouble())
-                        publish()
-                    }
+                if (physicallyStill() && shownKmh in STOP_KMH..PARK_NOISE_CEILING_KMH) {
+                    shownKmh = 0f
+                    emit()
                 }
             }
 
             override fun onAccuracyChanged(sensor: Sensor?, accuracy: Int) = Unit
         }
+        linear?.let {
+            sensorManager.registerListener(sensorListener, it, SensorManager.SENSOR_DELAY_FASTEST)
+        }
 
-        rotationSensor?.let {
-            sensorManager.registerListener(sensorListener, it, SensorManager.SENSOR_DELAY_GAME)
-        }
-        linearSensor?.let {
-            sensorManager.registerListener(sensorListener, it, SensorManager.SENSOR_DELAY_GAME)
-        }
-        gyroSensor?.let {
-            sensorManager.registerListener(sensorListener, it, SensorManager.SENSOR_DELAY_GAME)
-        }
+        trySend(SpeedSample(speedKmh = 0f, isMoving = false))
 
         awaitClose {
-            if (usingFused) {
-                fusedClient.removeLocationUpdates(fusedCallback)
-            } else {
-                locationManager.removeUpdates(gpsListener)
-            }
+            if (fusedOk) fusedClient.removeLocationUpdates(fusedCallback)
+            if (gpsOk) locationManager.removeUpdates(gpsListener)
             sensorManager.unregisterListener(sensorListener)
         }
     }
 
     private companion object {
-        const val GPS_INTERVAL_MS = 400L
-        const val GPS_MIN_INTERVAL_MS = 200L
-        const val MIN_EMIT_MS = 50L
-        const val IMU_COAST_MS = 2000L
+        /** Request as fast as the GNSS chip will go. */
+        const val GPS_INTERVAL_MS = 50L
+        const val MAX_ACCURACY_M = 75f
         const val MAX_SPEED_KMH = 280f
-        const val MAX_ACCURACY_M = 60f
-        const val MIN_MOVE_M = 5f
         const val MAX_IMPLIED_SPEED_MPS = 70f
-        const val STOP_MPS = 0.45
-        const val BEARING_MIN_MPS = 1.5
-        const val DEFAULT_SPEED_SIGMA_MPS = 1.8
-        const val MAX_SPEED_SIGMA_MPS = 6.0
+        const val MIN_ODO_MOVE_M = 5f
+
+        const val STOP_KMH = 0.8f
+        const val MOVE_KMH = 0.8f
+        const val PARK_NOISE_CEILING_KMH = 12f
+        const val STILL_ENERGY = 0.4f
+        const val STILL_TICKS = 8
+        /** ~85% weight on newest sample — tracks hard, tiny calm only. */
+        const val EMA_ALPHA = 0.85f
 
         fun consumeDistanceDelta(
             location: Location,
@@ -318,7 +264,7 @@ class SpeedRepository(context: Context) {
             if (dtSec <= 0.05) return 0f
 
             val distanceM = previous.distanceTo(location)
-            if (distanceM < MIN_MOVE_M) return 0f
+            if (distanceM < MIN_ODO_MOVE_M) return 0f
 
             val impliedMps = distanceM / dtSec
             if (impliedMps > MAX_IMPLIED_SPEED_MPS) {
