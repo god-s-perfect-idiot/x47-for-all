@@ -111,7 +111,7 @@ fun CombatModeNotch(
             Spacer(Modifier.width(6.dp))
             Text(
                 text = rideMode,
-                color = colors.pill,
+                color = colors.onBar,
                 fontFamily = ClusterUiFont,
                 fontSize = 12.sp,
                 fontWeight = FontWeight.Bold,

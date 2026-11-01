@@ -82,8 +82,7 @@ private fun ClusterColors.inverted(): ClusterColors = ClusterColors(
     value = value.invertRgb(),
     panel = panel.invertRgb(),
     panelDeep = panelDeep.invertRgb(),
-    // Light label / glyphs drawn on the fixed dark combat bar.
-    pill = pill,
+    pill = pill.invertRgb(),
     pillBorder = pillBorder.invertRgb(),
     crosshair = crosshair.invertRgb(),
     stripe = stripe.invertRgb(),

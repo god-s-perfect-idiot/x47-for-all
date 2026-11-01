@@ -18,6 +18,7 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -71,22 +72,23 @@ private const val TileEnterRowGapMs = 70
 
 /**
  * Reading-order enter indices (left→right, top→bottom):
- * row0: Back, Identity, Battery
+ * row0: Back, Identity, Battery, Settings
  * row1: Trips, RideMode, Sensors
  * row2: EFF, SPD, Google Maps
  */
 private fun tileEnterDelayMs(order: Int): Int {
     val row = when (order) {
-        in 0..2 -> 0
-        in 3..5 -> 1
+        in 0..3 -> 0
+        in 4..6 -> 1
         else -> 2
     }
     val col = when (order) {
-        in 0..2 -> order
-        in 3..5 -> order - 3
-        else -> order - 6
+        in 0..3 -> order
+        in 4..6 -> order - 4
+        else -> order - 7
     }
-    return row * (3 * TileEnterStaggerMs + TileEnterRowGapMs) + col * TileEnterStaggerMs
+    val colsInRow = if (row == 0) 4 else 3
+    return row * (colsInRow * TileEnterStaggerMs + TileEnterRowGapMs) + col * TileEnterStaggerMs
 }
 
 /** Slide in from the right + fade, staggered by [order]. */
@@ -116,9 +118,9 @@ private fun Modifier.controlTileEnter(order: Int): Modifier {
  * Control Centre body (below [com.ultraviolette.navigator.ui.components.TopStatusBar]).
  *
  * Keeps UV modular-tile intent from docs/control-center-2.jpg, but only tiles that
- * make sense on a phone navigator: brand, battery, trips, ride mode, sensors,
- * EFF/SPD, and Google Maps launch. Drops bike ECU blocks (ABS / TC / regen /
- * hill hold / TPMS / dashcam / radar).
+ * make sense on a phone navigator: brand, battery, settings, trips, ride mode,
+ * sensors, EFF/SPD, and Google Maps launch. Drops bike ECU blocks (ABS / TC /
+ * regen / hill hold / TPMS / dashcam / radar).
  */
 @Composable
 fun ControlCenterContent(
@@ -126,6 +128,7 @@ fun ControlCenterContent(
     onClose: () -> Unit,
     onRideModeClick: () -> Unit,
     onTripsClick: () -> Unit = {},
+    onSettingsClick: () -> Unit = {},
     modifier: Modifier = Modifier
 ) {
     val colors = clusterColors()
@@ -139,7 +142,7 @@ fun ControlCenterContent(
             .padding(horizontal = 10.dp, vertical = 8.dp),
         verticalArrangement = Arrangement.spacedBy(gap)
     ) {
-        // Top row — brand + identity + battery
+        // Top row — back + identity + battery + settings (square, EFF-sized)
         Row(
             Modifier
                 .fillMaxWidth()
@@ -149,14 +152,15 @@ fun ControlCenterContent(
             BackTile(
                 onClick = onClose,
                 modifier = Modifier
-                    .weight(0.16f)
                     .fillMaxHeight()
+                    .aspectRatio(1f)
                     .controlTileEnter(0)
             )
             IdentityTile(
+                bikeName = data.bikeName,
                 onClick = onClose,
                 modifier = Modifier
-                    .weight(0.44f)
+                    .weight(1f)
                     .fillMaxHeight()
                     .controlTileEnter(1)
             )
@@ -164,9 +168,16 @@ fun ControlCenterContent(
                 percent = data.batteryPercent,
                 isCharging = data.isCharging,
                 modifier = Modifier
-                    .weight(0.40f)
+                    .weight(1f)
                     .fillMaxHeight()
                     .controlTileEnter(2)
+            )
+            SettingsTile(
+                onClick = onSettingsClick,
+                modifier = Modifier
+                    .fillMaxHeight()
+                    .aspectRatio(1f)
+                    .controlTileEnter(3)
             )
         }
 
@@ -191,7 +202,7 @@ fun ControlCenterContent(
                     modifier = Modifier
                         .weight(0.55f)
                         .fillMaxWidth()
-                        .controlTileEnter(3)
+                        .controlTileEnter(4)
                 )
                 Row(
                     Modifier
@@ -207,7 +218,7 @@ fun ControlCenterContent(
                         modifier = Modifier
                             .weight(1f)
                             .fillMaxHeight()
-                            .controlTileEnter(6)
+                            .controlTileEnter(7)
                     )
                     ScoreTile(
                         label = data.disciplineLabel,
@@ -217,7 +228,7 @@ fun ControlCenterContent(
                         modifier = Modifier
                             .weight(1f)
                             .fillMaxHeight()
-                            .controlTileEnter(7)
+                            .controlTileEnter(8)
                     )
                 }
             }
@@ -229,7 +240,7 @@ fun ControlCenterContent(
                 modifier = Modifier
                     .weight(0.42f)
                     .fillMaxHeight()
-                    .controlTileEnter(4)
+                    .controlTileEnter(5)
             )
 
             Column(
@@ -243,13 +254,13 @@ fun ControlCenterContent(
                     modifier = Modifier
                         .weight(0.55f)
                         .fillMaxWidth()
-                        .controlTileEnter(5)
+                        .controlTileEnter(6)
                 )
                 GoogleMapsTile(
                     modifier = Modifier
                         .weight(0.45f)
                         .fillMaxWidth()
-                        .controlTileEnter(8)
+                        .controlTileEnter(9)
                 )
             }
         }
@@ -356,6 +367,7 @@ private const val BackChevronPath =
 
 @Composable
 private fun IdentityTile(
+    bikeName: String,
     onClick: () -> Unit,
     modifier: Modifier = Modifier
 ) {
@@ -365,17 +377,17 @@ private fun IdentityTile(
             Modifier.fillMaxSize(),
             verticalArrangement = Arrangement.Center
         ) {
-            // Dashford has one cut — stroke underlay fattens "MY X-47".
+            // Dashford has one cut — stroke underlay fattens the bike name.
             val titleStyle = TextStyle(
                 color = colors.text,
                 fontFamily = ClusterUiFont,
-                fontSize = 20.sp,
+                fontSize = 18.sp,
                 fontWeight = FontWeight.Bold,
                 letterSpacing = 0.6.sp
             )
             Box {
                 Text(
-                    text = "MY X-47",
+                    text = bikeName,
                     style = titleStyle.copy(
                         drawStyle = Stroke(
                             width = 3.8f,
@@ -386,19 +398,59 @@ private fun IdentityTile(
                     ),
                     maxLines = 1
                 )
-                Text(text = "MY X-47", style = titleStyle, maxLines = 1)
+                Text(text = bikeName, style = titleStyle, maxLines = 1)
             }
             Text(
                 text = "NAVIGATOR",
                 color = colors.muted,
                 fontFamily = ClusterUiFont,
-                fontSize = 12.sp,
+                fontSize = 11.sp,
                 fontWeight = FontWeight.SemiBold,
                 letterSpacing = 1.4.sp
             )
         }
     }
 }
+
+@Composable
+private fun SettingsTile(
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier
+) {
+    val colors = clusterColors()
+    ControlTile(modifier = modifier, onClick = onClick) {
+        Box(
+            Modifier.fillMaxSize(),
+            contentAlignment = Alignment.Center
+        ) {
+            SettingsCogs(
+                color = colors.text,
+                modifier = Modifier.size(32.dp)
+            )
+        }
+    }
+}
+
+/** Dual-cog mark (20×20 viewBox) for the settings tile. */
+@Composable
+private fun SettingsCogs(
+    color: Color,
+    modifier: Modifier = Modifier
+) {
+    val path = remember { PathParser().parsePathString(SettingsCogsPath).toPath() }
+    Canvas(modifier) {
+        val scale = size.minDimension / SettingsCogsViewBox
+        withTransform({
+            scale(scale, scale, pivot = Offset.Zero)
+        }) {
+            drawPath(path, color)
+        }
+    }
+}
+
+private const val SettingsCogsViewBox = 20f
+private const val SettingsCogsPath =
+    "M15.003 11q.221 0 .436.023c.2.022.355.178.397.373l.222 1.036a.5.5 0 0 0 .642.37l1.005-.325a.47.47 0 0 1 .522.156q.26.352.438.757a.465.465 0 0 1-.125.529l-.786.71a.5.5 0 0 0 0 .742l.786.71a.465.465 0 0 1 .125.528q-.18.405-.438.757a.47.47 0 0 1-.522.157l-1.005-.326a.5.5 0 0 0-.642.371l-.222 1.034a.47.47 0 0 1-.396.374a4 4 0 0 1-.874 0a.465.465 0 0 1-.396-.373l-.22-1.035a.5.5 0 0 0-.644-.37l-1.006.325a.46.46 0 0 1-.52-.157a4 4 0 0 1-.438-.758a.465.465 0 0 1 .125-.529l.785-.708a.5.5 0 0 0 0-.742l-.785-.71a.465.465 0 0 1-.125-.528q.178-.406.437-.758a.46.46 0 0 1 .52-.156l1.007.326a.5.5 0 0 0 .643-.371l.22-1.036a.465.465 0 0 1 .397-.373q.216-.023.437-.023m0 3a1 1 0 1 0 0 2a1 1 0 0 0 0-2M7.5 1q.455 0 .892.063l.288.045l.073.02a.5.5 0 0 1 .326.368l.395 1.844a.5.5 0 0 0 .642.37l1.792-.58l.073-.018a.5.5 0 0 1 .461.168a6.5 6.5 0 0 1 1.184 2.046a.5.5 0 0 1-.137.538l-1.4 1.265a.5.5 0 0 0 0 .742l1.4 1.264a.5.5 0 0 1 .137.538a6.5 6.5 0 0 1-1.184 2.046a.5.5 0 0 1-.534.15l-1.792-.58a.5.5 0 0 0-.642.371l-.395 1.843a.5.5 0 0 1-.4.388q-.57.107-1.179.109c-.405 0-.8-.04-1.182-.11a.5.5 0 0 1-.398-.387l-.394-1.843a.5.5 0 0 0-.642-.37l-1.793.58a.5.5 0 0 1-.534-.151a6.5 6.5 0 0 1-1.184-2.046a.5.5 0 0 1 .137-.538l1.4-1.264a.5.5 0 0 0 .072-.661l-.072-.081l-1.4-1.265a.5.5 0 0 1-.137-.538A6.5 6.5 0 0 1 2.556 3.28l.052-.052a.5.5 0 0 1 .482-.098l1.793.58a.5.5 0 0 0 .642-.37l.394-1.844l.021-.072a.5.5 0 0 1 .377-.316Q6.891 1.001 7.5 1m0 4.75a1.75 1.75 0 1 0 0 3.5a1.75 1.75 0 0 0 0-3.5"
 
 @Composable
 private fun BatteryTile(
@@ -452,19 +504,16 @@ private fun BatteryTile(
 @Composable
 private fun BatteryBar(percent: Int, modifier: Modifier = Modifier) {
     val colors = clusterColors()
-    val shape = remember { ChamferShape(3.dp) }
     Box(
         modifier = modifier
             .fillMaxWidth()
-            .height(8.dp)
-            .clip(shape)
+            .height(14.dp)
             .background(colors.batteryTrack)
     ) {
         Box(
             Modifier
                 .fillMaxHeight()
                 .fillMaxWidth((percent.coerceIn(0, 100) / 100f))
-                .clip(shape)
                 .background(TopBarSoCFill)
         )
     }

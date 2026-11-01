@@ -90,6 +90,7 @@ class MainActivity : ComponentActivity() {
                     trips = trips,
                     onRideModeClick = { clusterViewModel.cycleRideMode() },
                     onEndRide = { clusterViewModel.endCurrentTrip() },
+                    onBikeNameChange = { clusterViewModel.setBikeName(it) },
                     modifier = Modifier.fillMaxSize()
                 )
             }

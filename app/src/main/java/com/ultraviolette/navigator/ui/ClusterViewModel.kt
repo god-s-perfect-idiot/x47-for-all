@@ -9,6 +9,7 @@ import com.ultraviolette.navigator.connectivity.ConnectivityRepository
 import com.ultraviolette.navigator.location.OdometerStore
 import com.ultraviolette.navigator.location.SpeedRepository
 import com.ultraviolette.navigator.location.TripStore
+import com.ultraviolette.navigator.model.BikeNameStore
 import com.ultraviolette.navigator.model.ClusterPlaceholders
 import com.ultraviolette.navigator.model.RideMode
 import com.ultraviolette.navigator.model.RideModeStore
@@ -42,6 +43,7 @@ class ClusterViewModel(application: Application) : AndroidViewModel(application)
     private val clockRepository = ClockRepository()
     private val odometerStore = OdometerStore(application)
     private val rideModeStore = RideModeStore(application)
+    private val bikeNameStore = BikeNameStore(application)
     private val tripStore = TripStore(application)
     private val idle = ClusterPlaceholders()
 
@@ -49,6 +51,8 @@ class ClusterViewModel(application: Application) : AndroidViewModel(application)
     private var totalMeters: Double = odometerStore.readTotalMeters()
     /** Last chosen ride theme — loaded from disk so reopen keeps accent. */
     private val savedRideMode: String = rideModeStore.readRideMode()
+    /** Last chosen bike display name — loaded from disk so reopen keeps identity. */
+    private val savedBikeName: String = bikeNameStore.readBikeName()
     /** Current trip meters — continues until the ride is finalized into history. */
     private var tripMeters: Double = 0.0
     /** Moving-only trip duration (paused while speed is 0). */
@@ -64,7 +68,8 @@ class ClusterViewModel(application: Application) : AndroidViewModel(application)
         idle.copy(
             odometerKm = formatDistanceKm(totalMeters),
             tripKm = formatDistanceKm(tripMeters),
-            rideMode = savedRideMode
+            rideMode = savedRideMode,
+            bikeName = savedBikeName
         )
     )
     val data: StateFlow<ClusterPlaceholders> = _data.asStateFlow()
@@ -138,6 +143,14 @@ class ClusterViewModel(application: Application) : AndroidViewModel(application)
             rideModeStore.writeRideMode(next)
             current.copy(rideMode = next)
         }
+    }
+
+    /** Control Centre → Settings → Vehicle — rename the identity tile bike. */
+    fun setBikeName(name: String) {
+        val trimmed = name.trim()
+        if (trimmed.isEmpty()) return
+        bikeNameStore.writeBikeName(trimmed)
+        _data.update { current -> current.copy(bikeName = trimmed) }
     }
 
     fun startSpeedUpdates() {

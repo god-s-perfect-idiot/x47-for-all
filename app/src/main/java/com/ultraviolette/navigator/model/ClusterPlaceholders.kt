@@ -79,7 +79,9 @@ data class ClusterPlaceholders(
     val efficiencyLabel: String = "EFF",
     val disciplineLabel: String = "SPD",
     /** Ambient-light driven — true when the cluster should use the inverted dark palette. */
-    val isDarkMode: Boolean = false
+    val isDarkMode: Boolean = false,
+    /** Bike display name on the Control Centre identity tile — persisted via BikeNameStore. */
+    val bikeName: String = BikeNameStore.DEFAULT_BIKE_NAME
 ) {
     val isGlide: Boolean get() = rideMode.equals(RideMode.GLIDE, ignoreCase = true)
     val isCombat: Boolean get() = rideMode.equals(RideMode.COMBAT, ignoreCase = true)

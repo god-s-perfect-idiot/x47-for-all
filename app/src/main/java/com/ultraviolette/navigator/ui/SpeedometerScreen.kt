@@ -48,7 +48,7 @@ import com.ultraviolette.navigator.ui.theme.rememberClusterAccent
 /** Side rails hug the bezel; tight enough that avg / time grey boxes stay compact. */
 private val SideRailWidth = 145.dp
 
-private enum class ClusterPane { Speedometer, ControlCentre, Trips }
+private enum class ClusterPane { Speedometer, ControlCentre, Trips, Settings }
 
 @Composable
 fun SpeedometerScreen(
@@ -56,12 +56,13 @@ fun SpeedometerScreen(
     trips: List<SavedTrip> = emptyList(),
     onRideModeClick: () -> Unit = {},
     onEndRide: () -> Unit = {},
+    onBikeNameChange: (String) -> Unit = {},
     modifier: Modifier = Modifier
 ) {
     var pane by remember { mutableStateOf(ClusterPane.Speedometer) }
     BackHandler(enabled = pane != ClusterPane.Speedometer) {
         pane = when (pane) {
-            ClusterPane.Trips -> ClusterPane.ControlCentre
+            ClusterPane.Trips, ClusterPane.Settings -> ClusterPane.ControlCentre
             ClusterPane.ControlCentre -> ClusterPane.Speedometer
             ClusterPane.Speedometer -> ClusterPane.Speedometer
         }
@@ -76,7 +77,14 @@ fun SpeedometerScreen(
             transitionSpec = {
                 val spec = tween<Float>(280, easing = FastOutSlowInEasing)
                 val slide = tween<IntOffset>(280, easing = FastOutSlowInEasing)
-                val opening = targetState.ordinal > initialState.ordinal
+                // Speedometer is root; everything else is a forward drill-in from Control Centre.
+                val opening = when {
+                    initialState == ClusterPane.Speedometer -> true
+                    targetState == ClusterPane.Speedometer -> false
+                    initialState == ClusterPane.ControlCentre -> true
+                    targetState == ClusterPane.ControlCentre -> false
+                    else -> targetState.ordinal > initialState.ordinal
+                }
                 if (opening) {
                     (
                         fadeIn(spec) + slideInVertically(animationSpec = slide) { it }
@@ -100,6 +108,7 @@ fun SpeedometerScreen(
                     onClose = { pane = ClusterPane.Speedometer },
                     onRideModeClick = onRideModeClick,
                     onTripsClick = { pane = ClusterPane.Trips },
+                    onSettingsClick = { pane = ClusterPane.Settings },
                     modifier = Modifier.fillMaxSize()
                 )
                 ClusterPane.Trips -> TripsHistoryContent(
@@ -107,6 +116,12 @@ fun SpeedometerScreen(
                     trips = trips,
                     onClose = { pane = ClusterPane.ControlCentre },
                     onEndRide = onEndRide,
+                    modifier = Modifier.fillMaxSize()
+                )
+                ClusterPane.Settings -> SettingsContent(
+                    data = data,
+                    onClose = { pane = ClusterPane.ControlCentre },
+                    onBikeNameChange = onBikeNameChange,
                     modifier = Modifier.fillMaxSize()
                 )
                 ClusterPane.Speedometer -> SpeedometerBody(
