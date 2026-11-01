@@ -4,6 +4,9 @@ import android.content.ActivityNotFoundException
 import android.content.Context
 import android.content.Intent
 import android.net.Uri
+import androidx.compose.animation.core.Animatable
+import androidx.compose.animation.core.FastOutSlowInEasing
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
@@ -24,6 +27,7 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -34,8 +38,10 @@ import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.StrokeJoin
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.drawscope.withTransform
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.vector.PathParser
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
@@ -54,6 +60,57 @@ import com.ultraviolette.navigator.ui.theme.UltravioletteNavigatorTheme
 import com.ultraviolette.navigator.ui.theme.clusterColors
 import com.ultraviolette.navigator.ui.theme.rememberClusterAccent
 import com.ultraviolette.navigator.weather.WeatherCondition
+
+/** Slide distance for each tile entering from the right. */
+private val TileEnterSlide = 56.dp
+private const val TileEnterDurationMs = 320
+/** Stagger between tiles in the same visual row (L→R). */
+private const val TileEnterStaggerMs = 55
+/** Extra pause before the next visual row starts. */
+private const val TileEnterRowGapMs = 70
+
+/**
+ * Reading-order enter indices (left→right, top→bottom):
+ * row0: Back, Identity, Battery
+ * row1: Trips, RideMode, Sensors
+ * row2: EFF, SPD, Google Maps
+ */
+private fun tileEnterDelayMs(order: Int): Int {
+    val row = when (order) {
+        in 0..2 -> 0
+        in 3..5 -> 1
+        else -> 2
+    }
+    val col = when (order) {
+        in 0..2 -> order
+        in 3..5 -> order - 3
+        else -> order - 6
+    }
+    return row * (3 * TileEnterStaggerMs + TileEnterRowGapMs) + col * TileEnterStaggerMs
+}
+
+/** Slide in from the right + fade, staggered by [order]. */
+@Composable
+private fun Modifier.controlTileEnter(order: Int): Modifier {
+    val density = LocalDensity.current
+    val slidePx = with(density) { TileEnterSlide.toPx() }
+    val progress = remember { Animatable(0f) }
+    LaunchedEffect(order) {
+        progress.snapTo(0f)
+        progress.animateTo(
+            targetValue = 1f,
+            animationSpec = tween(
+                durationMillis = TileEnterDurationMs,
+                delayMillis = tileEnterDelayMs(order),
+                easing = FastOutSlowInEasing
+            )
+        )
+    }
+    return this.graphicsLayer {
+        translationX = (1f - progress.value) * slidePx
+        alpha = progress.value
+    }
+}
 
 /**
  * Control Centre body (below [com.ultraviolette.navigator.ui.components.TopStatusBar]).
@@ -94,12 +151,14 @@ fun ControlCenterContent(
                 modifier = Modifier
                     .weight(0.16f)
                     .fillMaxHeight()
+                    .controlTileEnter(0)
             )
             IdentityTile(
                 onClick = onClose,
                 modifier = Modifier
                     .weight(0.44f)
                     .fillMaxHeight()
+                    .controlTileEnter(1)
             )
             BatteryTile(
                 percent = data.batteryPercent,
@@ -107,6 +166,7 @@ fun ControlCenterContent(
                 modifier = Modifier
                     .weight(0.40f)
                     .fillMaxHeight()
+                    .controlTileEnter(2)
             )
         }
 
@@ -131,6 +191,7 @@ fun ControlCenterContent(
                     modifier = Modifier
                         .weight(0.55f)
                         .fillMaxWidth()
+                        .controlTileEnter(3)
                 )
                 Row(
                     Modifier
@@ -146,6 +207,7 @@ fun ControlCenterContent(
                         modifier = Modifier
                             .weight(1f)
                             .fillMaxHeight()
+                            .controlTileEnter(6)
                     )
                     ScoreTile(
                         label = data.disciplineLabel,
@@ -155,6 +217,7 @@ fun ControlCenterContent(
                         modifier = Modifier
                             .weight(1f)
                             .fillMaxHeight()
+                            .controlTileEnter(7)
                     )
                 }
             }
@@ -166,6 +229,7 @@ fun ControlCenterContent(
                 modifier = Modifier
                     .weight(0.42f)
                     .fillMaxHeight()
+                    .controlTileEnter(4)
             )
 
             Column(
@@ -179,11 +243,13 @@ fun ControlCenterContent(
                     modifier = Modifier
                         .weight(0.55f)
                         .fillMaxWidth()
+                        .controlTileEnter(5)
                 )
                 GoogleMapsTile(
                     modifier = Modifier
                         .weight(0.45f)
                         .fillMaxWidth()
+                        .controlTileEnter(8)
                 )
             }
         }
@@ -299,14 +365,29 @@ private fun IdentityTile(
             Modifier.fillMaxSize(),
             verticalArrangement = Arrangement.Center
         ) {
-            Text(
-                text = "MY X-47",
+            // Dashford has one cut — stroke underlay fattens "MY X-47".
+            val titleStyle = TextStyle(
                 color = colors.text,
                 fontFamily = ClusterUiFont,
                 fontSize = 20.sp,
                 fontWeight = FontWeight.Bold,
                 letterSpacing = 0.6.sp
             )
+            Box {
+                Text(
+                    text = "MY X-47",
+                    style = titleStyle.copy(
+                        drawStyle = Stroke(
+                            width = 3.8f,
+                            miter = 10f,
+                            join = StrokeJoin.Round,
+                            cap = StrokeCap.Round
+                        )
+                    ),
+                    maxLines = 1
+                )
+                Text(text = "MY X-47", style = titleStyle, maxLines = 1)
+            }
             Text(
                 text = "NAVIGATOR",
                 color = colors.muted,
