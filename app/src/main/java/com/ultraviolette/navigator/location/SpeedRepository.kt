@@ -12,7 +12,9 @@ import android.location.Location
 import android.location.LocationListener
 import android.location.LocationManager
 import android.os.Build
+import android.os.Handler
 import android.os.Looper
+import android.os.SystemClock
 import androidx.core.content.ContextCompat
 import com.google.android.gms.location.LocationCallback
 import com.google.android.gms.location.LocationRequest
@@ -27,20 +29,21 @@ import kotlin.math.sqrt
 import android.location.LocationRequest as PlatformLocationRequest
 
 data class SpeedSample(
-    /** Real-time GNSS Doppler speed in km/h (0 when parked / untrustworthy). */
+    /** Display speed in km/h (0 when parked / untrustworthy). */
     val speedKmh: Float,
     /** Meters advanced since the previous accepted fix (odo/trip). */
     val deltaMeters: Float = 0f,
     /** True when the dial should leave idle chrome. */
-    val isMoving: Boolean = false
+    val isMoving: Boolean = false,
+    /** True while a recent GNSS-quality fix is available. */
+    val gpsAvailable: Boolean = false
 )
 
 /**
- * Max-rate GNSS Doppler speed (Maps-style [Location.getSpeed]).
+ * GNSS Doppler speed when the chip has a lock; coarse network / fused
+ * position-delta when it does not — dumb, but the dial still moves.
  *
- * Subscribes to **both** Play Services fused location and the raw GPS provider
- * so we get every fix the chip produces. Newest [Location.elapsedRealtimeNanos]
- * wins. IMU is a still-veto only — never used as velocity.
+ * IMU remains a still-veto only.
  */
 class SpeedRepository(context: Context) {
     private val appContext = context.applicationContext
@@ -72,7 +75,9 @@ class SpeedRepository(context: Context) {
 
         var lastDistanceLocation: Location? = null
         var lastFixNanos = 0L
+        var lastGpsElapsedMs = 0L
         var shownKmh = 0f
+        var gpsAvailable = false
         var motionEnergy = 0f
         var stillTicks = 0
 
@@ -84,61 +89,119 @@ class SpeedRepository(context: Context) {
                 SpeedSample(
                     speedKmh = if (moving) shownKmh else 0f,
                     deltaMeters = deltaMeters,
-                    isMoving = moving
+                    isMoving = moving,
+                    gpsAvailable = gpsAvailable
                 )
             )
         }
 
-        fun onGps(location: Location) {
-            if (location.provider == LocationManager.NETWORK_PROVIDER) return
-
-            // Drop stale / duplicate fixes from dual listeners.
-            val nanos = location.elapsedRealtimeNanos
-            if (nanos > 0L && nanos < lastFixNanos) return
-            if (nanos > 0L) lastFixNanos = nanos
-
-            if (location.hasAccuracy() && location.accuracy > MAX_ACCURACY_M) return
-
-            val odoDelta = consumeDistanceDelta(location, lastDistanceLocation) { next ->
-                lastDistanceLocation = next
+        fun refreshGpsAvailability(nowMs: Long = SystemClock.elapsedRealtime()) {
+            val next = lastGpsElapsedMs > 0L && (nowMs - lastGpsElapsedMs) <= GPS_STALE_MS
+            if (next != gpsAvailable) {
+                gpsAvailable = next
+                emit()
+            } else {
+                gpsAvailable = next
             }
+        }
 
-            if (!location.hasSpeed()) {
-                if (odoDelta > 0f) emit(odoDelta)
-                return
-            }
-
-            var kmh = (location.speed * 3.6f).coerceAtLeast(0f)
+        fun applySpeed(kmhRaw: Float, deltaMeters: Float, fromGps: Boolean) {
+            var kmh = kmhRaw.coerceAtLeast(0f)
             if (kmh > MAX_SPEED_KMH) {
-                if (odoDelta > 0f) emit(odoDelta)
+                if (deltaMeters > 0f) emit(deltaMeters)
                 return
             }
 
-            // Only kill readings deep inside uncertainty (Maps still shows low speeds).
-            if (location.hasSpeedAccuracy()) {
-                val sigmaKmh = location.speedAccuracyMetersPerSecond * 3.6f
-                if (kmh > 0f && kmh < sigmaKmh * 0.5f) kmh = 0f
-            }
-
-            // Still + low GNSS → parked noise. High GNSS while "still" = cruise.
             if (physicallyStill() && kmh < PARK_NOISE_CEILING_KMH) {
                 kmh = 0f
             }
 
-            // Near pass-through — snap to stop, otherwise track hard.
+            val alpha = if (fromGps) GPS_EMA_ALPHA else FALLBACK_EMA_ALPHA
             shownKmh = when {
                 kmh < STOP_KMH -> 0f
                 shownKmh < STOP_KMH -> kmh
-                else -> shownKmh * (1f - EMA_ALPHA) + kmh * EMA_ALPHA
+                else -> shownKmh * (1f - alpha) + kmh * alpha
+            }
+            emit(deltaMeters)
+        }
+
+        fun isGnssQuality(location: Location): Boolean {
+            if (location.provider == LocationManager.GPS_PROVIDER) return true
+            if (location.provider == LocationManager.NETWORK_PROVIDER) return false
+            // Fused / other: treat tight accuracy + Doppler as GNSS-quality.
+            if (location.hasAccuracy() && location.accuracy <= GPS_QUALITY_ACCURACY_M && location.hasSpeed()) {
+                return true
+            }
+            return false
+        }
+
+        fun onLocation(location: Location) {
+            val nanos = location.elapsedRealtimeNanos
+            if (nanos > 0L && nanos < lastFixNanos) return
+            if (nanos > 0L) lastFixNanos = nanos
+
+            val gnss = isGnssQuality(location)
+            if (gnss) {
+                lastGpsElapsedMs = SystemClock.elapsedRealtime()
+                gpsAvailable = true
+            } else {
+                refreshGpsAvailability()
+                // Prefer live GNSS; ignore coarse fixes while the chip is locked.
+                if (gpsAvailable) return
             }
 
-            emit(odoDelta)
+            val maxAcc = if (gnss) MAX_GPS_ACCURACY_M else MAX_FALLBACK_ACCURACY_M
+            if (location.hasAccuracy() && location.accuracy > maxAcc) return
+
+            val odoDelta = if (gnss) {
+                consumeDistanceDelta(location, lastDistanceLocation, maxAcc) { next ->
+                    lastDistanceLocation = next
+                }
+            } else {
+                0f // Don't pollute lifetime odo with cell/wifi jumps.
+            }
+
+            if (location.hasSpeed()) {
+                var kmh = location.speed * 3.6f
+                if (gnss && location.hasSpeedAccuracy()) {
+                    val sigmaKmh = location.speedAccuracyMetersPerSecond * 3.6f
+                    if (kmh > 0f && kmh < sigmaKmh * 0.5f) kmh = 0f
+                }
+                applySpeed(kmh, odoDelta, fromGps = gnss)
+                return
+            }
+
+            // Dumb fallback: implied speed from successive coarse fixes.
+            if (!gnss) {
+                val previous = lastDistanceLocation
+                if (previous == null) {
+                    lastDistanceLocation = location
+                    return
+                }
+                val dtSec = (location.time - previous.time) / 1000.0
+                if (dtSec < MIN_FALLBACK_DT_SEC) return
+                val distanceM = previous.distanceTo(location)
+                if (distanceM < MIN_FALLBACK_MOVE_M) return
+                val impliedMps = distanceM / dtSec
+                if (impliedMps > MAX_IMPLIED_SPEED_MPS) {
+                    lastDistanceLocation = location
+                    return
+                }
+                lastDistanceLocation = location
+                applySpeed(
+                    (impliedMps * 3.6).toFloat(),
+                    deltaMeters = 0f,
+                    fromGps = false
+                )
+                return
+            }
+
+            if (odoDelta > 0f) emit(odoDelta)
         }
 
         val fusedCallback = object : LocationCallback() {
             override fun onLocationResult(result: LocationResult) {
-                // Every fix in the batch — not only lastLocation.
-                result.locations.forEach(::onGps)
+                result.locations.forEach(::onLocation)
             }
         }
 
@@ -157,8 +220,7 @@ class SpeedRepository(context: Context) {
             fusedOk = false
         }
 
-        // Raw GPS in parallel — often delivers faster than fused alone.
-        val gpsListener = LocationListener { location -> onGps(location) }
+        val gpsListener = LocationListener { location -> onLocation(location) }
         var gpsOk = false
         try {
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
@@ -187,10 +249,42 @@ class SpeedRepository(context: Context) {
             gpsOk = false
         }
 
-        if (!fusedOk && !gpsOk) {
+        // Coarse cell/wifi stream for tunnels / indoor — only drives the dial when GNSS is stale.
+        val networkListener = LocationListener { location -> onLocation(location) }
+        var networkOk = false
+        try {
+            if (locationManager.isProviderEnabled(LocationManager.NETWORK_PROVIDER)) {
+                locationManager.requestLocationUpdates(
+                    LocationManager.NETWORK_PROVIDER,
+                    NETWORK_INTERVAL_MS,
+                    NETWORK_MIN_DISTANCE_M,
+                    networkListener,
+                    Looper.getMainLooper()
+                )
+                networkOk = true
+            }
+        } catch (_: Exception) {
+            networkOk = false
+        }
+
+        if (!fusedOk && !gpsOk && !networkOk) {
             close()
             return@callbackFlow
         }
+
+        val mainHandler = Handler(Looper.getMainLooper())
+        val staleTicker = object : Runnable {
+            override fun run() {
+                refreshGpsAvailability()
+                // If GNSS is gone and we're still showing motion but sensors say parked, zero out.
+                if (!gpsAvailable && physicallyStill() && shownKmh >= STOP_KMH) {
+                    shownKmh = 0f
+                    emit()
+                }
+                mainHandler.postDelayed(this, GPS_STALE_CHECK_MS)
+            }
+        }
+        mainHandler.postDelayed(staleTicker, GPS_STALE_CHECK_MS)
 
         val linear = sensorManager.getDefaultSensor(Sensor.TYPE_LINEAR_ACCELERATION)
             ?: sensorManager.getDefaultSensor(Sensor.TYPE_ACCELEROMETER)
@@ -222,38 +316,50 @@ class SpeedRepository(context: Context) {
             sensorManager.registerListener(sensorListener, it, SensorManager.SENSOR_DELAY_FASTEST)
         }
 
-        trySend(SpeedSample(speedKmh = 0f, isMoving = false))
+        trySend(SpeedSample(speedKmh = 0f, isMoving = false, gpsAvailable = false))
 
         awaitClose {
+            mainHandler.removeCallbacks(staleTicker)
             if (fusedOk) fusedClient.removeLocationUpdates(fusedCallback)
             if (gpsOk) locationManager.removeUpdates(gpsListener)
+            if (networkOk) locationManager.removeUpdates(networkListener)
             sensorManager.unregisterListener(sensorListener)
         }
     }
 
     private companion object {
-        /** Request as fast as the GNSS chip will go. */
         const val GPS_INTERVAL_MS = 50L
-        const val MAX_ACCURACY_M = 75f
+        const val NETWORK_INTERVAL_MS = 1_000L
+        const val NETWORK_MIN_DISTANCE_M = 5f
+        const val GPS_STALE_MS = 4_000L
+        const val GPS_STALE_CHECK_MS = 1_000L
+        const val GPS_QUALITY_ACCURACY_M = 30f
+        const val MAX_GPS_ACCURACY_M = 75f
+        const val MAX_FALLBACK_ACCURACY_M = 500f
         const val MAX_SPEED_KMH = 280f
         const val MAX_IMPLIED_SPEED_MPS = 70f
         const val MIN_ODO_MOVE_M = 5f
+        const val MIN_FALLBACK_MOVE_M = 15f
+        const val MIN_FALLBACK_DT_SEC = 1.0
 
         const val STOP_KMH = 0.8f
         const val MOVE_KMH = 0.8f
         const val PARK_NOISE_CEILING_KMH = 12f
         const val STILL_ENERGY = 0.4f
         const val STILL_TICKS = 8
-        /** ~85% weight on newest sample — tracks hard, tiny calm only. */
-        const val EMA_ALPHA = 0.85f
+        /** ~85% weight on newest GNSS sample. */
+        const val GPS_EMA_ALPHA = 0.85f
+        /** Heavier smoothing for coarse network deltas. */
+        const val FALLBACK_EMA_ALPHA = 0.35f
 
         fun consumeDistanceDelta(
             location: Location,
             previous: Location?,
+            maxAccuracyM: Float,
             onAnchor: (Location) -> Unit
         ): Float {
             if (location.provider == LocationManager.NETWORK_PROVIDER) return 0f
-            if (location.hasAccuracy() && location.accuracy > MAX_ACCURACY_M) return 0f
+            if (location.hasAccuracy() && location.accuracy > maxAccuracyM) return 0f
 
             if (previous == null) {
                 onAnchor(location)

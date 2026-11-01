@@ -12,7 +12,9 @@ import kotlinx.coroutines.flow.callbackFlow
 
 data class BatterySample(
     /** Device charge level 0–100. */
-    val percent: Int
+    val percent: Int,
+    /** True while plugged in / actively charging (or full on charger). */
+    val isCharging: Boolean = false
 )
 
 /**
@@ -28,7 +30,15 @@ class BatteryRepository(context: Context) {
             val scale = intent.getIntExtra(BatteryManager.EXTRA_SCALE, -1)
             if (level < 0 || scale <= 0) return
             val percent = ((level * 100f) / scale).toInt().coerceIn(0, 100)
-            trySend(BatterySample(percent = percent))
+            val status = intent.getIntExtra(
+                BatteryManager.EXTRA_STATUS,
+                BatteryManager.BATTERY_STATUS_UNKNOWN
+            )
+            val plugged = intent.getIntExtra(BatteryManager.EXTRA_PLUGGED, 0)
+            val isCharging = plugged != 0 ||
+                status == BatteryManager.BATTERY_STATUS_CHARGING ||
+                status == BatteryManager.BATTERY_STATUS_FULL
+            trySend(BatterySample(percent = percent, isCharging = isCharging))
         }
 
         val receiver = object : BroadcastReceiver() {

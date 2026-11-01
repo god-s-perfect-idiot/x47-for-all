@@ -36,15 +36,14 @@ import com.ultraviolette.navigator.ui.components.LeftShrinkWing
 import com.ultraviolette.navigator.ui.components.RightMetricsColumn
 import com.ultraviolette.navigator.ui.components.RightShrinkWing
 import com.ultraviolette.navigator.ui.components.TopStatusBar
-import com.ultraviolette.navigator.ui.theme.ClusterBackground
-import com.ultraviolette.navigator.ui.theme.ClusterBezel
 import com.ultraviolette.navigator.ui.theme.UltravioletteNavigatorTheme
+import com.ultraviolette.navigator.ui.theme.clusterColors
 import com.ultraviolette.navigator.ui.theme.rememberClusterAccent
 import kotlin.math.max
 
 /** Minimum black clearance so UI clears phone rounded corners on short edges. */
 private val MinEdgeBezel = 28.dp
-/** Side rails hug the bezel; tight enough that Wh/km / range grey boxes stay compact. */
+/** Side rails hug the bezel; tight enough that avg / time grey boxes stay compact. */
 private val SideRailWidth = 145.dp
 
 @Composable
@@ -53,6 +52,7 @@ fun SpeedometerScreen(
     onControlCentreClick: () -> Unit = {},
     modifier: Modifier = Modifier
 ) {
+    val colors = clusterColors()
     val density = LocalDensity.current
     val layoutDirection = LocalLayoutDirection.current
     val view = LocalView.current
@@ -76,7 +76,7 @@ fun SpeedometerScreen(
     Row(
         modifier = modifier
             .fillMaxSize()
-            .background(ClusterBezel)
+            .background(colors.bezel)
     ) {
         EdgeBezel(leftBezel)
 
@@ -84,7 +84,7 @@ fun SpeedometerScreen(
             Modifier
                 .weight(1f)
                 .fillMaxHeight()
-                .background(ClusterBackground)
+                .background(colors.background)
         ) {
             TopStatusBar(data = data)
 
@@ -150,11 +150,12 @@ fun SpeedometerScreen(
 
 @Composable
 private fun EdgeBezel(width: Dp) {
+    val colors = clusterColors()
     Spacer(
         Modifier
             .width(width)
             .fillMaxHeight()
-            .background(ClusterBezel)
+            .background(colors.bezel)
     )
 }
 

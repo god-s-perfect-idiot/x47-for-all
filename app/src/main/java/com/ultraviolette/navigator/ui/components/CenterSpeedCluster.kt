@@ -1,7 +1,6 @@
 package com.ultraviolette.navigator.ui.components
 
 import androidx.compose.animation.AnimatedContent
-import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.SizeTransform
 import androidx.compose.animation.core.FastOutSlowInEasing
 import androidx.compose.animation.core.tween
@@ -45,10 +44,9 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.ultraviolette.navigator.model.ClusterPlaceholders
 import com.ultraviolette.navigator.ui.theme.ClusterDisplayFont
-import com.ultraviolette.navigator.ui.theme.ClusterMuted
 import com.ultraviolette.navigator.ui.theme.ClusterOrange
-import com.ultraviolette.navigator.ui.theme.ClusterText
 import com.ultraviolette.navigator.ui.theme.ClusterUiFont
+import com.ultraviolette.navigator.ui.theme.clusterColors
 import com.ultraviolette.navigator.weather.WeatherCondition
 
 @Composable
@@ -58,8 +56,7 @@ fun CenterSpeedCluster(
     onControlCentreClick: () -> Unit,
     modifier: Modifier = Modifier
 ) {
-    val showIdleChrome = !data.isMoving
-
+    val colors = clusterColors()
     Box(modifier = modifier.fillMaxSize()) {
         CrosshairFrame(Modifier.fillMaxSize())
 
@@ -81,7 +78,7 @@ fun CenterSpeedCluster(
                 )
                 DegreeValue(
                     number = data.leanAngleDeg,
-                    color = ClusterText,
+                    color = colors.text,
                     fontSize = 15.sp,
                     fontWeight = FontWeight.SemiBold,
                     modifier = Modifier.offset(y = (-1).dp)
@@ -100,7 +97,7 @@ fun CenterSpeedCluster(
                 Spacer(Modifier.width(6.dp))
                 DegreeValue(
                     number = data.ambientTempC,
-                    color = ClusterText,
+                    color = colors.text,
                     fontSize = 16.sp,
                     fontWeight = FontWeight.Medium,
                     suffix = "C"
@@ -116,7 +113,7 @@ fun CenterSpeedCluster(
         SlashLabel(
             left = data.speedUnitLeft,
             right = data.speedUnitRight,
-            color = ClusterMuted,
+            color = colors.muted,
             fontSize = 15.sp,
             fontWeight = FontWeight.Medium,
             modifier = Modifier
@@ -124,41 +121,24 @@ fun CenterSpeedCluster(
                 .offset(y = SpeedDigitHalfHeight + SpeedUnitGap + SpeedUnitHalfHeight)
         )
 
-        AnimatedVisibility(
-            visible = showIdleChrome,
-            enter = fadeIn(
-                animationSpec = tween(RideModeTransitionMs, easing = FastOutSlowInEasing)
-            ) + scaleIn(
-                initialScale = 0.92f,
-                animationSpec = tween(RideModeTransitionMs, easing = FastOutSlowInEasing)
-            ),
-            exit = fadeOut(
-                animationSpec = tween(RideModeTransitionMs, easing = FastOutSlowInEasing)
-            ) + scaleOut(
-                targetScale = 0.92f,
-                animationSpec = tween(RideModeTransitionMs, easing = FastOutSlowInEasing)
-            ),
+        Box(
             modifier = Modifier
                 .align(Alignment.BottomCenter)
                 .padding(bottom = 22.dp)
+                .width(196.dp)
+                .height(30.dp)
+                .clickable(onClick = onControlCentreClick),
+            contentAlignment = Alignment.Center
         ) {
-            Box(
-                modifier = Modifier
-                    .width(196.dp)
-                    .height(30.dp)
-                    .clickable(onClick = onControlCentreClick),
-                contentAlignment = Alignment.Center
-            ) {
-                ControlCentreShape(color = accent, modifier = Modifier.fillMaxSize())
-                Text(
-                    text = "CONTROL CENTRE",
-                    color = ClusterText,
-                    fontFamily = ClusterUiFont,
-                    fontSize = 11.sp,
-                    fontWeight = FontWeight.Bold,
-                    letterSpacing = 0.8.sp
-                )
-            }
+            ControlCentreShape(color = accent, modifier = Modifier.fillMaxSize())
+            Text(
+                text = "CONTROL CENTRE",
+                color = colors.text,
+                fontFamily = ClusterUiFont,
+                fontSize = 11.sp,
+                fontWeight = FontWeight.Bold,
+                letterSpacing = 0.8.sp
+            )
         }
     }
 }
@@ -172,6 +152,7 @@ private fun AnimatedSpeedDigits(
     text: String,
     modifier: Modifier = Modifier
 ) {
+    val colors = clusterColors()
     val glyphs = text.padEnd(3, '—').take(3)
 
     Row(
@@ -196,7 +177,7 @@ private fun AnimatedSpeedDigits(
                 ) { char ->
                     Text(
                         text = char.toString(),
-                        color = ClusterText,
+                        color = colors.text,
                         fontFamily = ClusterDisplayFont,
                         fontSize = SpeedDigitSize,
                         fontWeight = FontWeight.Bold,

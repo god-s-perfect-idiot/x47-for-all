@@ -23,10 +23,9 @@ import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.LayoutDirection
 import androidx.compose.ui.unit.dp
 import com.ultraviolette.navigator.ui.theme.ClusterBlue
-import com.ultraviolette.navigator.ui.theme.ClusterCrosshair
-import com.ultraviolette.navigator.ui.theme.ClusterDark
 import com.ultraviolette.navigator.ui.theme.ClusterGreen
 import com.ultraviolette.navigator.ui.theme.ClusterRed
+import com.ultraviolette.navigator.ui.theme.clusterColors
 
 /**
  * Four short diagonals framing the speed readout.
@@ -36,9 +35,10 @@ import com.ultraviolette.navigator.ui.theme.ClusterRed
  */
 @Composable
 fun CrosshairFrame(modifier: Modifier = Modifier) {
+    val colors = clusterColors()
     Canvas(modifier = modifier.fillMaxSize()) {
         val stroke = 4.dp.toPx()
-        val color = ClusterCrosshair
+        val color = colors.crosshair
         val w = size.width
         val h = size.height
 
@@ -84,13 +84,14 @@ fun LeanAngleGauge(
     leanAngleDeg: Float = 0f,
     modifier: Modifier = Modifier
 ) {
+    val colors = clusterColors()
     Canvas(modifier = modifier) {
         val stroke = 2.6.dp.toPx()
         val radius = minOf(size.width / 2f, size.height) - stroke
         val cx = size.width / 2f
         val cy = size.height
         drawArc(
-            color = ClusterCrosshair,
+            color = colors.crosshair,
             startAngle = 200f,
             sweepAngle = 140f,
             useCenter = false,
@@ -118,7 +119,7 @@ fun LeanAngleGauge(
         val needleDeg = (90.0 - leanAngleDeg.toDouble().coerceIn(-45.0, 45.0))
         val needle = Math.toRadians(needleDeg)
         drawLine(
-            color = ClusterDark,
+            color = colors.dark,
             start = Offset(
                 cx + (radius * 0.30f * Math.cos(needle)).toFloat(),
                 cy - (radius * 0.30f * Math.sin(needle)).toFloat()
@@ -136,6 +137,7 @@ fun LeanAngleGauge(
 /** Battery SoC bar with chamfered ends (refs 1–3). */
 @Composable
 fun BatteryBar(percent: Int, modifier: Modifier = Modifier) {
+    val colors = clusterColors()
     Canvas(modifier = modifier) {
         val cut = size.height * 0.9f
         fun barPath(width: Float) = Path().apply {
@@ -145,7 +147,7 @@ fun BatteryBar(percent: Int, modifier: Modifier = Modifier) {
             lineTo(0f, size.height)
             close()
         }
-        drawPath(barPath(size.width), Color(0xFFCDD1D6))
+        drawPath(barPath(size.width), colors.batteryTrack)
         val fill = (percent.coerceIn(0, 100) / 100f) * size.width
         if (fill > cut * 2) {
             drawPath(barPath(fill), ClusterGreen)
@@ -157,9 +159,10 @@ fun BatteryBar(percent: Int, modifier: Modifier = Modifier) {
 @Composable
 fun DiagonalStripes(
     modifier: Modifier = Modifier,
-    color: Color = ClusterCrosshair,
+    color: Color? = null,
     count: Int = 10
 ) {
+    val stripeColor = color ?: clusterColors().crosshair
     Canvas(modifier = modifier) {
         val stroke = 4.5.dp.toPx()
         val slant = size.height * 0.48f
@@ -170,7 +173,7 @@ fun DiagonalStripes(
         for (i in 0 until count) {
             val x = pad + i * spacing
             drawLine(
-                color = color,
+                color = stripeColor,
                 start = Offset(x - slant * 0.5f, 0f),
                 end = Offset(x + slant * 0.5f, size.height),
                 strokeWidth = stroke,
@@ -188,9 +191,12 @@ fun DiagonalStripes(
 fun RegenCells(
     filled: Int,
     modifier: Modifier = Modifier,
-    fillColor: Color = Color.White,
-    emptyColor: Color = Color.White.copy(alpha = 0.28f)
+    fillColor: Color? = null,
+    emptyColor: Color? = null
 ) {
+    val colors = clusterColors()
+    val resolvedFill = fillColor ?: colors.onBar
+    val resolvedEmpty = emptyColor ?: colors.onBar.copy(alpha = 0.28f)
     Canvas(modifier = modifier) {
         val count = 3
         val h = size.height
@@ -210,7 +216,7 @@ fun RegenCells(
 
         for (i in 0 until count) {
             val left = originX + i * (cellW + gap)
-            val color = if (i < filled) fillColor else emptyColor
+            val color = if (i < filled) resolvedFill else resolvedEmpty
             // Upright round-rect + twin slots, then skew into a parallelogram.
             withTransform({
                 translate(left = left, top = 0f)
@@ -248,6 +254,7 @@ fun ControlCentreShape(
     color: Color,
     modifier: Modifier = Modifier
 ) {
+    val darkFace = clusterColors().isDark
     Canvas(modifier = modifier.fillMaxSize()) {
         val w = size.width
         val h = size.height
@@ -269,28 +276,56 @@ fun ControlCentreShape(
         fun flankLeft(y: Float) = topLeft + (bottomLeft - topLeft) * (y / h)
         fun flankRight(y: Float) = topRight + (bottomRight - topRight) * (y / h)
 
-        val tabColor = Color(
-            red = color.red * 0.48f,
-            green = color.green * 0.48f,
-            blue = color.blue * 0.52f,
-            alpha = 1f
-        )
-        // Lighter pale → soft accent gradient.
-        fun lift(c: Color, towardWhite: Float) = Color(
-            red = (c.red + (1f - c.red) * towardWhite).coerceIn(0f, 1f),
-            green = (c.green + (1f - c.green) * towardWhite).coerceIn(0f, 1f),
-            blue = (c.blue + (1f - c.blue) * towardWhite).coerceIn(0f, 1f),
-            alpha = 1f
-        )
-        val topFill = lift(color, 0.88f)
-        val midFill = lift(color, 0.42f)
-        val bottomFill = lift(color, 0.32f)
-        val strokeColor = Color(
-            red = color.red * 0.55f,
-            green = color.green * 0.55f,
-            blue = color.blue * 0.62f,
-            alpha = 1f
-        )
+        val tabColor = if (darkFace) {
+            // Lift tabs toward accent so they read on a dark face.
+            Color(
+                red = (color.red * 0.72f + 0.18f).coerceIn(0f, 1f),
+                green = (color.green * 0.72f + 0.18f).coerceIn(0f, 1f),
+                blue = (color.blue * 0.78f + 0.20f).coerceIn(0f, 1f),
+                alpha = 1f
+            )
+        } else {
+            Color(
+                red = color.red * 0.48f,
+                green = color.green * 0.48f,
+                blue = color.blue * 0.52f,
+                alpha = 1f
+            )
+        }
+        // Light face: pale → accent (mix toward white). Dark face: deep → accent (mix toward black).
+        fun tone(c: Color, amount: Float) = if (darkFace) {
+            Color(
+                red = (c.red * (1f - amount)).coerceIn(0f, 1f),
+                green = (c.green * (1f - amount)).coerceIn(0f, 1f),
+                blue = (c.blue * (1f - amount)).coerceIn(0f, 1f),
+                alpha = 1f
+            )
+        } else {
+            Color(
+                red = (c.red + (1f - c.red) * amount).coerceIn(0f, 1f),
+                green = (c.green + (1f - c.green) * amount).coerceIn(0f, 1f),
+                blue = (c.blue + (1f - c.blue) * amount).coerceIn(0f, 1f),
+                alpha = 1f
+            )
+        }
+        val topFill = tone(color, 0.88f)
+        val midFill = tone(color, 0.42f)
+        val bottomFill = tone(color, 0.32f)
+        val strokeColor = if (darkFace) {
+            Color(
+                red = (color.red * 0.85f + 0.12f).coerceIn(0f, 1f),
+                green = (color.green * 0.85f + 0.12f).coerceIn(0f, 1f),
+                blue = (color.blue * 0.90f + 0.14f).coerceIn(0f, 1f),
+                alpha = 1f
+            )
+        } else {
+            Color(
+                red = color.red * 0.55f,
+                green = color.green * 0.55f,
+                blue = color.blue * 0.62f,
+                alpha = 1f
+            )
+        }
 
         // Side tabs — short parallelograms centered on each flank.
         val leftTab = Path().apply {
@@ -425,8 +460,9 @@ internal fun filletedPolygon(vertices: List<Offset>, radii: FloatArray): Path {
 
 @Composable
 fun BottomModeBarBackground(modifier: Modifier = Modifier) {
+    val colors = clusterColors()
     Canvas(modifier = modifier.fillMaxSize()) {
-        drawRect(ClusterDark)
+        drawRect(colors.dark)
         // Raised center trapezoid tab
         val centerW = size.width * 0.30f
         val left = (size.width - centerW) / 2f
@@ -438,7 +474,7 @@ fun BottomModeBarBackground(modifier: Modifier = Modifier) {
             lineTo(left - flare * 0.2f, size.height)
             close()
         }
-        drawPath(tab, Color(0xFF23272C))
+        drawPath(tab, colors.bottomModeTab)
     }
 }
 

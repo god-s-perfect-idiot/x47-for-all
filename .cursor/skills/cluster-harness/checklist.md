@@ -30,8 +30,8 @@ Mark each row **pass** / **fail** / **n/a**. Failures need a one-line fix hypoth
 
 | # | Check |
 |---|--------|
-| L1 | Left rail: Wh/km stack uses shared `SideValueSize` / panel tokens |
-| R1 | Right rail: range stack mirrors left; lean / temp as designed |
+| L1 | Left rail: avg stack uses shared `SideValueSize` / panel tokens |
+| R1 | Right rail: trip time stack mirrors left; lean / temp as designed |
 | S1 | `SideRailWidth` + edge pads keep content off bezels |
 
 ## Center speed cluster
@@ -54,4 +54,4 @@ Mark each row **pass** / **fail** / **n/a**. Failures need a one-line fix hypoth
 
 ## Placeholders (first-build data)
 
-Defaults live in `ClusterPlaceholders` / `design-facts.md`. Unless the task changed data, expect COMBAT-like values (speed `---`, range `159`, battery `72`, regen `R3`, etc.).
+Defaults live in `ClusterPlaceholders` / `design-facts.md`. Unless the task changed data, expect COMBAT-like values (speed `---`, avg `---`, trip time `0:00`, battery `72`, regen `R3`, etc.).

@@ -16,22 +16,20 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
-import androidx.compose.ui.geometry.Size
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Path
-import androidx.compose.ui.graphics.StrokeCap
-import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.graphics.drawscope.withTransform
+import androidx.compose.ui.graphics.vector.PathParser
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.ultraviolette.navigator.ui.theme.ClusterBlue
-import com.ultraviolette.navigator.ui.theme.ClusterCombat
-import com.ultraviolette.navigator.ui.theme.ClusterPill
 import com.ultraviolette.navigator.ui.theme.ClusterUiFont
+import com.ultraviolette.navigator.ui.theme.clusterColors
 
 /**
  * Full-width thin dark mode strip. Flat wings reach the short edges;
@@ -49,7 +47,7 @@ val CombatNotchTopHalf: Dp = 100.dp
 val CombatHangBelow: Dp = 0.dp
 val CombatRiseAbove: Dp = CombatNotchRise
 
-/** Shared with Control Centre hide/show so ride-mode enter/exit feels like one beat. */
+/** Ride-mode color morph duration (parked combat → moving blue). */
 internal const val RideModeTransitionMs = 360
 
 @Composable
@@ -58,8 +56,9 @@ fun CombatModeNotch(
     isMoving: Boolean = false,
     modifier: Modifier = Modifier
 ) {
+    val colors = clusterColors()
     val barColor by animateColorAsState(
-        targetValue = if (isMoving) ClusterBlue else ClusterCombat,
+        targetValue = if (isMoving) ClusterBlue else colors.combat,
         animationSpec = tween(RideModeTransitionMs, easing = FastOutSlowInEasing),
         label = "combatBarColor"
     )
@@ -109,7 +108,7 @@ fun CombatModeNotch(
             Spacer(Modifier.width(6.dp))
             Text(
                 text = rideMode,
-                color = ClusterPill,
+                color = colors.pill,
                 fontFamily = ClusterUiFont,
                 fontSize = 12.sp,
                 fontWeight = FontWeight.Bold,
@@ -119,24 +118,21 @@ fun CombatModeNotch(
     }
 }
 
+/** Shuffle / transfer glyph next to ride mode (SVG viewBox 0 0 8 8). */
+private const val ModeGlyphViewBox = 8f
+private const val ModeGlyphPath =
+    "M1 0v2h1V1h4v2H5l1.5 2.5L8 3H7V0zm.5 2.5L0 5h1v3h6V6H6v1H2V5h1z"
+
 @Composable
 private fun ModeGlyph(modifier: Modifier = Modifier) {
+    val colors = clusterColors()
+    val path = remember { PathParser().parsePathString(ModeGlyphPath).toPath() }
     Canvas(modifier = modifier) {
-        val stroke = 1.4.dp.toPx()
-        drawRect(
-            color = Color.White,
-            topLeft = Offset(size.width * 0.15f, size.height * 0.15f),
-            size = Size(size.width * 0.7f, size.height * 0.7f),
-            style = Stroke(width = stroke)
-        )
-        drawArc(
-            color = Color.White,
-            startAngle = 40f,
-            sweepAngle = 220f,
-            useCenter = false,
-            topLeft = Offset(size.width * 0.28f, size.height * 0.28f),
-            size = Size(size.width * 0.44f, size.height * 0.44f),
-            style = Stroke(width = stroke, cap = StrokeCap.Round)
-        )
+        val scale = size.minDimension / ModeGlyphViewBox
+        withTransform({
+            scale(scale, scale, pivot = Offset.Zero)
+        }) {
+            drawPath(path, colors.onBar)
+        }
     }
 }

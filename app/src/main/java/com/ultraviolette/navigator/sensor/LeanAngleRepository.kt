@@ -6,11 +6,13 @@ import android.hardware.SensorEvent
 import android.hardware.SensorEventListener
 import android.hardware.SensorManager
 import android.hardware.display.DisplayManager
+import android.os.SystemClock
 import android.view.Display
 import android.view.Surface
 import kotlinx.coroutines.channels.awaitClose
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.callbackFlow
+import kotlin.math.abs
 import kotlin.math.atan2
 import kotlin.math.hypot
 import kotlin.math.roundToInt
@@ -29,6 +31,10 @@ data class LeanSample(
  * Uses gravity (accelerometer fallback) remapped to the current display
  * rotation so landscape left/right tilt reads as lean, independent of
  * which way `sensorLandscape` flipped the activity.
+ *
+ * Mount tilt is auto-zeroed: when the phone sits at a steady angle for
+ * 15 seconds (bar mount recline, cradle skew), that angle becomes the
+ * new upright and lean is reported relative to it.
  */
 class LeanAngleRepository(context: Context) {
     private val appContext = context.applicationContext
@@ -116,28 +122,62 @@ class LeanAngleRepository(context: Context) {
     }
 }
 
-/** EMA so the needle and digit don't jitter on every sample. */
+/**
+ * EMA + mount-zero: smooth the physical bank, then subtract a baseline that
+ * locks in whenever the phone holds a steady tilt for [STABLE_MS].
+ */
 private class LeanFilter {
     private var ema: Float? = null
+    /** Physical lean treated as upright (mount / cradle bias). */
+    private var zeroOffsetDeg: Float = 0f
+    /** Running candidate while tilt looks unchanged. */
+    private var stableCandidateDeg: Float? = null
+    private var stableSinceElapsedMs: Long = 0L
 
-    fun accept(rawDeg: Float): Float {
+    fun accept(rawDeg: Float, nowElapsedMs: Long = SystemClock.elapsedRealtime()): Float {
         val clamped = rawDeg.coerceIn(-MAX_LEAN_DEG, MAX_LEAN_DEG)
         val previous = ema
-        val next = if (previous == null) {
+        val smoothed = if (previous == null) {
             clamped
         } else {
             previous * (1f - EMA_ALPHA) + clamped * EMA_ALPHA
         }
-        // Snap tiny residual to zero so idle reads 0°.
-        val snapped = if (kotlin.math.abs(next) < DEAD_ZONE_DEG) 0f else next
-        ema = snapped
-        return snapped
+        ema = smoothed
+
+        updateMountZero(smoothed, nowElapsedMs)
+
+        val relative = (smoothed - zeroOffsetDeg).coerceIn(-MAX_LEAN_DEG, MAX_LEAN_DEG)
+        // Snap tiny residual to zero so idle / calibrated mount reads 0°.
+        return if (abs(relative) < DEAD_ZONE_DEG) 0f else relative
+    }
+
+    private fun updateMountZero(smoothedDeg: Float, nowElapsedMs: Long) {
+        val candidate = stableCandidateDeg
+        if (candidate == null || abs(smoothedDeg - candidate) > STABLE_DELTA_DEG) {
+            // Tilt moved — restart the settle window around the new angle.
+            stableCandidateDeg = smoothedDeg
+            stableSinceElapsedMs = nowElapsedMs
+            return
+        }
+
+        // Keep the candidate as a light average so noise doesn't freeze an outlier.
+        val settled = candidate * (1f - STABLE_BLEND) + smoothedDeg * STABLE_BLEND
+        stableCandidateDeg = settled
+
+        if (nowElapsedMs - stableSinceElapsedMs < STABLE_MS) return
+        if (abs(settled - zeroOffsetDeg) < DEAD_ZONE_DEG) return
+        zeroOffsetDeg = settled
     }
 
     private companion object {
         const val EMA_ALPHA = 0.22f
         const val MAX_LEAN_DEG = 60f
         const val DEAD_ZONE_DEG = 0.6f
+        /** How long tilt must hold still before it becomes the new upright. */
+        const val STABLE_MS = 15_000L
+        /** Max wobble still counted as "unchanged" while settling. */
+        const val STABLE_DELTA_DEG = 1.5f
+        const val STABLE_BLEND = 0.15f
     }
 }
 

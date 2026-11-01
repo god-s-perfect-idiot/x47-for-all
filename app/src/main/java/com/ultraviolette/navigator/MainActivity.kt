@@ -34,15 +34,29 @@ class MainActivity : ComponentActivity() {
         configureFullscreen()
 
         setContent {
-            UltravioletteNavigatorTheme {
-                val data by clusterViewModel.data.collectAsStateWithLifecycle()
-
+            val data by clusterViewModel.data.collectAsStateWithLifecycle()
+            UltravioletteNavigatorTheme(darkTheme = data.isDarkMode) {
                 val permissionLauncher = rememberLauncherForActivityResult(
                     ActivityResultContracts.RequestMultiplePermissions()
                 ) { result ->
                     val granted = result[Manifest.permission.ACCESS_FINE_LOCATION] == true ||
                         result[Manifest.permission.ACCESS_COARSE_LOCATION] == true
                     clusterViewModel.onLocationPermissionResult(granted)
+                }
+
+                val phoneStateLauncher = rememberLauncherForActivityResult(
+                    ActivityResultContracts.RequestMultiplePermissions()
+                ) { result ->
+                    val granted = result[Manifest.permission.READ_PHONE_STATE] == true ||
+                        (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU &&
+                            result[Manifest.permission.READ_BASIC_PHONE_STATE] == true)
+                    clusterViewModel.onPhoneStatePermissionResult(granted)
+                }
+
+                val bluetoothLauncher = rememberLauncherForActivityResult(
+                    ActivityResultContracts.RequestPermission()
+                ) { granted ->
+                    clusterViewModel.onBluetoothPermissionResult(granted)
                 }
 
                 LaunchedEffect(Unit) {
@@ -56,6 +70,18 @@ class MainActivity : ComponentActivity() {
                                 Manifest.permission.ACCESS_COARSE_LOCATION
                             )
                         )
+                    }
+                    if (!hasPhoneStatePermission()) {
+                        phoneStateLauncher.launch(phoneStatePermissions())
+                    } else {
+                        clusterViewModel.onPhoneStatePermissionResult(true)
+                    }
+                    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+                        if (!hasBluetoothConnectPermission()) {
+                            bluetoothLauncher.launch(Manifest.permission.BLUETOOTH_CONNECT)
+                        } else {
+                            clusterViewModel.onBluetoothPermissionResult(true)
+                        }
                     }
                 }
 
@@ -99,6 +125,39 @@ class MainActivity : ComponentActivity() {
         )
         return fine == PackageManager.PERMISSION_GRANTED ||
             coarse == PackageManager.PERMISSION_GRANTED
+    }
+
+    private fun hasPhoneStatePermission(): Boolean {
+        val phone = ContextCompat.checkSelfPermission(
+            this,
+            Manifest.permission.READ_PHONE_STATE
+        ) == PackageManager.PERMISSION_GRANTED
+        if (phone) return true
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+            return ContextCompat.checkSelfPermission(
+                this,
+                Manifest.permission.READ_BASIC_PHONE_STATE
+            ) == PackageManager.PERMISSION_GRANTED
+        }
+        return false
+    }
+
+    private fun phoneStatePermissions(): Array<String> =
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+            arrayOf(
+                Manifest.permission.READ_PHONE_STATE,
+                Manifest.permission.READ_BASIC_PHONE_STATE
+            )
+        } else {
+            arrayOf(Manifest.permission.READ_PHONE_STATE)
+        }
+
+    private fun hasBluetoothConnectPermission(): Boolean {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.S) return true
+        return ContextCompat.checkSelfPermission(
+            this,
+            Manifest.permission.BLUETOOTH_CONNECT
+        ) == PackageManager.PERMISSION_GRANTED
     }
 
     private fun configureFullscreen() {

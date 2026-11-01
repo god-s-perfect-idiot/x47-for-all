@@ -1,21 +1,26 @@
 package com.ultraviolette.navigator.ui
 
 import android.app.Application
+import android.os.SystemClock
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.ultraviolette.navigator.battery.BatteryRepository
+import com.ultraviolette.navigator.connectivity.ConnectivityRepository
 import com.ultraviolette.navigator.location.OdometerStore
 import com.ultraviolette.navigator.location.SpeedRepository
 import com.ultraviolette.navigator.model.ClusterPlaceholders
+import com.ultraviolette.navigator.sensor.AmbientLightRepository
 import com.ultraviolette.navigator.sensor.LeanAngleRepository
 import com.ultraviolette.navigator.sensor.formatLeanAngleDigits
 import com.ultraviolette.navigator.time.ClockRepository
 import com.ultraviolette.navigator.weather.WeatherRepository
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
+import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import kotlin.math.roundToInt
 
@@ -23,6 +28,8 @@ class ClusterViewModel(application: Application) : AndroidViewModel(application)
     private val speedRepository = SpeedRepository(application)
     private val batteryRepository = BatteryRepository(application)
     private val leanAngleRepository = LeanAngleRepository(application)
+    private val ambientLightRepository = AmbientLightRepository(application)
+    private val connectivityRepository = ConnectivityRepository(application)
     private val weatherRepository = WeatherRepository(application)
     private val clockRepository = ClockRepository()
     private val odometerStore = OdometerStore(application)
@@ -32,6 +39,10 @@ class ClusterViewModel(application: Application) : AndroidViewModel(application)
     private var totalMeters: Double = odometerStore.readTotalMeters()
     /** Current trip meters — resets when the process starts a new ViewModel. */
     private var tripMeters: Double = 0.0
+    /** Moving-only trip duration (paused while speed is 0). */
+    private var movingMsAccumulated: Long = 0L
+    /** ElapsedRealtime when the current moving segment began; null while stopped. */
+    private var movingSegmentStartMs: Long? = null
 
     private val _data = MutableStateFlow(
         idle.copy(
@@ -44,13 +55,18 @@ class ClusterViewModel(application: Application) : AndroidViewModel(application)
     private var speedJob: Job? = null
     private var batteryJob: Job? = null
     private var leanJob: Job? = null
+    private var ambientLightJob: Job? = null
+    private var connectivityJob: Job? = null
     private var weatherJob: Job? = null
     private var clockJob: Job? = null
+    private var tripTickerJob: Job? = null
     private var isMoving = false
 
     init {
         startBatteryUpdates()
         startLeanUpdates()
+        startAmbientLightUpdates()
+        startConnectivityUpdates()
         startClockUpdates()
     }
 
@@ -64,6 +80,23 @@ class ClusterViewModel(application: Application) : AndroidViewModel(application)
         }
     }
 
+    /** Re-bind telephony signal after READ_PHONE_STATE / READ_BASIC_PHONE_STATE. */
+    fun onPhoneStatePermissionResult(granted: Boolean) {
+        if (granted) {
+            // Restart so TelephonyCallback can attach with the new grant.
+            stopConnectivityUpdates()
+            startConnectivityUpdates()
+        }
+    }
+
+    /** Re-bind Bluetooth after BLUETOOTH_CONNECT (API 31+). */
+    fun onBluetoothPermissionResult(granted: Boolean) {
+        if (granted) {
+            stopConnectivityUpdates()
+            startConnectivityUpdates()
+        }
+    }
+
     fun startSpeedUpdates() {
         if (!speedRepository.hasLocationPermission()) return
         if (speedJob?.isActive == true) return
@@ -71,27 +104,79 @@ class ClusterViewModel(application: Application) : AndroidViewModel(application)
         speedJob = viewModelScope.launch {
             speedRepository.observeSpeed().collect { sample ->
                 // Repository owns the stationary gate — do not second-guess with a low threshold.
+                val wasMoving = isMoving
                 isMoving = sample.isMoving
 
-                if (sample.deltaMeters > 0f) {
+                if (sample.isMoving && sample.deltaMeters > 0f) {
                     tripMeters += sample.deltaMeters
                     totalMeters += sample.deltaMeters
                     odometerStore.writeTotalMeters(totalMeters)
                 }
 
-                _data.update { current ->
-                    current.copy(
-                        speedKmh = if (sample.isMoving) {
-                            formatSpeedDigits(sample.speedKmh.roundToInt())
-                        } else {
-                            "———"
-                        },
-                        isMoving = sample.isMoving,
-                        odometerKm = formatDistanceKm(totalMeters),
-                        tripKm = formatDistanceKm(tripMeters)
-                    )
+                if (sample.isMoving && !wasMoving) {
+                    movingSegmentStartMs = SystemClock.elapsedRealtime()
+                    startTripTicker()
+                } else if (!sample.isMoving && wasMoving) {
+                    pauseMovingClock()
+                    stopTripTicker()
                 }
+
+                publishTripMetrics(
+                    speedKmh = if (sample.isMoving) {
+                        formatSpeedDigits(sample.speedKmh.roundToInt())
+                    } else {
+                        "———"
+                    },
+                    isMoving = sample.isMoving,
+                    gpsAvailable = sample.gpsAvailable
+                )
             }
+        }
+    }
+
+    /** Advancing avg + trip clock only while speed > 0. */
+    private fun startTripTicker() {
+        if (tripTickerJob?.isActive == true) return
+        tripTickerJob = viewModelScope.launch {
+            while (isActive && movingSegmentStartMs != null) {
+                publishTripMetrics()
+                delay(1_000L)
+            }
+        }
+    }
+
+    private fun stopTripTicker() {
+        tripTickerJob?.cancel()
+        tripTickerJob = null
+    }
+
+    private fun pauseMovingClock() {
+        val started = movingSegmentStartMs ?: return
+        movingMsAccumulated += (SystemClock.elapsedRealtime() - started).coerceAtLeast(0L)
+        movingSegmentStartMs = null
+    }
+
+    private fun movingElapsedMs(): Long {
+        val open = movingSegmentStartMs ?: return movingMsAccumulated
+        return movingMsAccumulated + (SystemClock.elapsedRealtime() - open).coerceAtLeast(0L)
+    }
+
+    private fun publishTripMetrics(
+        speedKmh: String? = null,
+        isMoving: Boolean? = null,
+        gpsAvailable: Boolean? = null
+    ) {
+        val elapsedMs = movingElapsedMs()
+        _data.update { current ->
+            current.copy(
+                speedKmh = speedKmh ?: current.speedKmh,
+                isMoving = isMoving ?: current.isMoving,
+                gpsAvailable = gpsAvailable ?: current.gpsAvailable,
+                odometerKm = formatDistanceKm(totalMeters),
+                tripKm = formatDistanceKm(tripMeters),
+                avgSpeedKmh = formatAvgSpeed(tripMeters, elapsedMs),
+                tripTimeText = formatTripTime(elapsedMs)
+            )
         }
     }
 
@@ -101,7 +186,10 @@ class ClusterViewModel(application: Application) : AndroidViewModel(application)
         batteryJob = viewModelScope.launch {
             batteryRepository.observeBattery().collect { sample ->
                 _data.update { current ->
-                    current.copy(batteryPercent = sample.percent)
+                    current.copy(
+                        batteryPercent = sample.percent,
+                        isCharging = sample.isCharging
+                    )
                 }
             }
         }
@@ -120,6 +208,41 @@ class ClusterViewModel(application: Application) : AndroidViewModel(application)
                 }
             }
         }
+    }
+
+    fun startAmbientLightUpdates() {
+        if (ambientLightJob?.isActive == true) return
+
+        ambientLightJob = viewModelScope.launch {
+            ambientLightRepository.observeAmbientLight().collect { sample ->
+                _data.update { current ->
+                    if (current.isDarkMode == sample.isDark) current
+                    else current.copy(isDarkMode = sample.isDark)
+                }
+            }
+        }
+    }
+
+    fun startConnectivityUpdates() {
+        if (connectivityJob?.isActive == true) return
+
+        connectivityJob = viewModelScope.launch {
+            connectivityRepository.observeConnectivity().collect { sample ->
+                _data.update { current ->
+                    current.copy(
+                        signalBars = sample.cellularBars,
+                        wifiOn = sample.wifiConnected,
+                        wifiBars = sample.wifiBars,
+                        bluetoothOn = sample.bluetoothConnected
+                    )
+                }
+            }
+        }
+    }
+
+    private fun stopConnectivityUpdates() {
+        connectivityJob?.cancel()
+        connectivityJob = null
     }
 
     fun startWeatherUpdates() {
@@ -154,20 +277,33 @@ class ClusterViewModel(application: Application) : AndroidViewModel(application)
     private fun stopSpeedUpdates(resetToIdle: Boolean) {
         speedJob?.cancel()
         speedJob = null
+        if (isMoving) pauseMovingClock()
         isMoving = false
+        stopTripTicker()
         if (resetToIdle) {
-            // Keep live SoC + clock + distance + weather + lean when GPS is denied — only clear speed/motion.
+            val elapsedMs = movingElapsedMs()
+            // Keep live SoC + clock + distance + trip stats + weather + lean +
+            // connectivity — clear speed/GPS.
             _data.update { current ->
                 idle.copy(
                     batteryPercent = current.batteryPercent,
+                    isCharging = current.isCharging,
                     timeText = current.timeText,
                     odometerKm = formatDistanceKm(totalMeters),
                     tripKm = formatDistanceKm(tripMeters),
+                    avgSpeedKmh = formatAvgSpeed(tripMeters, elapsedMs),
+                    tripTimeText = formatTripTime(elapsedMs),
                     ambientTempC = current.ambientTempC,
                     weatherCondition = current.weatherCondition,
                     weatherIsDay = current.weatherIsDay,
                     leanAngleDeg = current.leanAngleDeg,
-                    leanAngleSignedDeg = current.leanAngleSignedDeg
+                    leanAngleSignedDeg = current.leanAngleSignedDeg,
+                    isDarkMode = current.isDarkMode,
+                    signalBars = current.signalBars,
+                    wifiOn = current.wifiOn,
+                    wifiBars = current.wifiBars,
+                    bluetoothOn = current.bluetoothOn,
+                    gpsAvailable = false
                 )
             }
         }
@@ -180,9 +316,14 @@ class ClusterViewModel(application: Application) : AndroidViewModel(application)
 
     override fun onCleared() {
         stopSpeedUpdates(resetToIdle = false)
+        tripTickerJob?.cancel()
+        tripTickerJob = null
         stopWeatherUpdates()
         leanJob?.cancel()
         leanJob = null
+        ambientLightJob?.cancel()
+        ambientLightJob = null
+        stopConnectivityUpdates()
         batteryJob?.cancel()
         batteryJob = null
         clockJob?.cancel()
@@ -202,6 +343,21 @@ class ClusterViewModel(application: Application) : AndroidViewModel(application)
             } else {
                 "%d km".format(km.roundToInt())
             }
+        }
+
+        fun formatAvgSpeed(meters: Double, movingMs: Long): String {
+            if (movingMs < 1_000L || meters <= 0.0) return "———"
+            val hours = movingMs / 3_600_000.0
+            val kmh = ((meters / 1000.0) / hours).roundToInt().coerceIn(0, 999)
+            return "%03d".format(kmh)
+        }
+
+        /** Moving time only, hours:minutes. */
+        fun formatTripTime(movingMs: Long): String {
+            val totalMin = (movingMs / 60_000L).coerceAtLeast(0L)
+            val hours = totalMin / 60L
+            val minutes = totalMin % 60L
+            return "%d:%02d".format(hours, minutes)
         }
     }
 }

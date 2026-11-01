@@ -34,18 +34,14 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.ultraviolette.navigator.model.ClusterPlaceholders
 import com.ultraviolette.navigator.ui.theme.ClusterDisplayFont
-import com.ultraviolette.navigator.ui.theme.ClusterMuted
-import com.ultraviolette.navigator.ui.theme.ClusterPanel
-import com.ultraviolette.navigator.ui.theme.ClusterStripe
-import com.ultraviolette.navigator.ui.theme.ClusterText
 import com.ultraviolette.navigator.ui.theme.ClusterUiFont
-import com.ultraviolette.navigator.ui.theme.ClusterValue
+import com.ultraviolette.navigator.ui.theme.clusterColors
 
 /** Outer inset for left rail start / right rail end (inner side stays 10.dp). */
 private val EdgePad = 16.dp
 /** Soft radius on wing corners (matches MetricPanelShape). */
 private val WingCorner = 4.dp
-/** Thin grey stem under Wh/km / range — narrower so the block reads as shrinking. */
+/** Thin grey stem under avg / time — narrower so the block reads as shrinking. */
 private val PanelStemWidth = 56.dp
 /** Bottom wing under EFF / R3 — taller grey band, runs into the combat notch. */
 private val ShrinkWingHeight = 40.dp
@@ -61,9 +57,9 @@ private val FooterStripeWidth = 120.dp
 private val FooterCellsWidth = 124.dp
 /** Even gap between label / value / sub / underline on each side stack. */
 private val MetricStackGap = 6.dp
-/** Shared Wh/km + range figure — one size, no clip (Klapt trim/clip was cutting 054). */
+/** Shared avg + trip-time figure — one size, no clip (Klapt trim/clip was cutting digits). */
 private val SideValueSize = 42.sp
-/** Shared accent label size for Wh/km and range. */
+/** Shared accent label size for avg and time. */
 private val SideLabelSize = 16.sp
 /** Inner pad inside the grey metric panel. */
 private val PanelPadH = 12.dp
@@ -73,7 +69,7 @@ private val PanelPadBottom = 28.dp
 
 /**
  * Klapt demo metrics are unreliable — never use Trim.Both on display figures
- * (it was slicing the top of 054). Keep includeFontPadding off only.
+ * (it was slicing tops of display digits). Keep includeFontPadding off only.
  */
 private fun tightStyle(
     fontSize: TextUnit,
@@ -95,37 +91,41 @@ private fun tightStyle(
     )
 )
 
-/** Big side value — identical style for Wh/km and range. */
+/** Big side value — shared style for avg (3 digits) and trip time. */
 @Composable
 private fun SideMetricValue(
     text: String,
     alignEnd: Boolean,
+    fontSize: TextUnit = SideValueSize,
+    letterSpacing: TextUnit = (-1.2).sp,
     modifier: Modifier = Modifier
 ) {
+    val colors = clusterColors()
     Text(
         text = text,
-        color = ClusterText,
+        color = colors.text,
         textAlign = if (alignEnd) TextAlign.End else TextAlign.Start,
         softWrap = false,
         maxLines = 1,
         modifier = modifier,
         style = tightStyle(
-            fontSize = SideValueSize,
+            fontSize = fontSize,
             fontWeight = FontWeight.Medium,
             fontFamily = ClusterDisplayFont,
-            letterSpacing = (-1.2).sp,
-            lineHeight = SideValueSize
+            letterSpacing = letterSpacing,
+            lineHeight = fontSize
         )
     )
 }
 
-/** Left rail: odo + Wh/km panel, with a thinner grey stem continuing below. */
+/** Left rail: odo + avg speed panel, with a thinner grey stem continuing below. */
 @Composable
 fun LeftMetricsColumn(
     data: ClusterPlaceholders,
     accent: Color,
     modifier: Modifier = Modifier
 ) {
+    val colors = clusterColors()
     Column(modifier.fillMaxHeight()) {
         MetricHeader(
             label = "odo",
@@ -141,7 +141,7 @@ fun LeftMetricsColumn(
                 .padding(end = 10.dp, top = 8.dp)
                 .fillMaxWidth()
                 .clip(MetricPanelShape(mirror = false, foldToWidth = PanelStemWidth))
-                .background(ClusterPanel)
+                .background(colors.panel)
                 .padding(
                     start = EdgePad,
                     end = PanelPadH,
@@ -149,22 +149,27 @@ fun LeftMetricsColumn(
                     bottom = PanelPadBottom
                 )
         ) {
-            SlashLabel(
-                left = "Wh",
-                right = "km",
+            Text(
+                text = "avg",
                 color = accent,
-                fontSize = SideLabelSize,
-                fontWeight = FontWeight.Medium
+                style = tightStyle(
+                    fontSize = SideLabelSize,
+                    fontWeight = FontWeight.Medium,
+                    fontFamily = ClusterUiFont
+                )
             )
             SideMetricValue(
-                text = data.energyWhPerKm,
+                text = data.avgSpeedKmh,
                 alignEnd = false
             )
-            RecLessThan(
-                value = data.energyRecommended,
-                color = ClusterMuted,
-                fontSize = 13.sp,
-                fontWeight = FontWeight.Medium
+            Text(
+                text = "km/h",
+                color = colors.muted,
+                style = tightStyle(
+                    fontSize = 13.sp,
+                    fontWeight = FontWeight.Medium,
+                    fontFamily = ClusterUiFont
+                )
             )
             AccentUnderline(
                 accent = accent,
@@ -181,20 +186,21 @@ fun LeftMetricsColumn(
                 .width(PanelStemWidth)
                 .weight(1f)
                 .background(
-                    ClusterPanel,
+                    colors.panel,
                     RoundedCornerShape(bottomStart = WingCorner, bottomEnd = WingCorner)
                 )
         )
     }
 }
 
-/** Right rail: ride + range panel, with a thinner grey stem continuing below. */
+/** Right rail: ride + trip time panel, with a thinner grey stem continuing below. */
 @Composable
 fun RightMetricsColumn(
     data: ClusterPlaceholders,
     accent: Color,
     modifier: Modifier = Modifier
 ) {
+    val colors = clusterColors()
     Column(
         modifier.fillMaxHeight(),
         horizontalAlignment = Alignment.End
@@ -214,7 +220,7 @@ fun RightMetricsColumn(
                 .padding(start = 10.dp, top = 8.dp)
                 .fillMaxWidth()
                 .clip(MetricPanelShape(mirror = true, foldToWidth = PanelStemWidth))
-                .background(ClusterPanel)
+                .background(colors.panel)
                 .padding(
                     start = PanelPadH,
                     end = EdgePad,
@@ -223,7 +229,7 @@ fun RightMetricsColumn(
                 )
         ) {
             Text(
-                text = "range",
+                text = "time",
                 color = accent,
                 style = tightStyle(
                     fontSize = SideLabelSize,
@@ -232,12 +238,12 @@ fun RightMetricsColumn(
                 )
             )
             SideMetricValue(
-                text = data.rangeKm,
+                text = data.tripTimeText,
                 alignEnd = true
             )
             Text(
-                text = "km",
-                color = ClusterMuted,
+                text = "h:m",
+                color = colors.muted,
                 style = tightStyle(
                     fontSize = 13.sp,
                     fontWeight = FontWeight.Medium,
@@ -259,7 +265,7 @@ fun RightMetricsColumn(
                 .width(PanelStemWidth)
                 .weight(1f)
                 .background(
-                    ClusterPanel,
+                    colors.panel,
                     RoundedCornerShape(bottomStart = WingCorner, bottomEnd = WingCorner)
                 )
         )
@@ -273,6 +279,7 @@ fun RightMetricsColumn(
  */
 @Composable
 fun LeftShrinkWing(modifier: Modifier = Modifier) {
+    val colors = clusterColors()
     Canvas(
         modifier
             .fillMaxWidth()
@@ -294,7 +301,7 @@ fun LeftShrinkWing(modifier: Modifier = Modifier) {
             // Soften lower corners (flat + notch) and the top-inner; keep outer-top square.
             radii = floatArrayOf(0f, r, r, r)
         )
-        drawPath(path, ClusterPanel)
+        drawPath(path, colors.panel)
     }
 }
 
@@ -305,6 +312,7 @@ fun LeftShrinkWing(modifier: Modifier = Modifier) {
  */
 @Composable
 fun RightShrinkWing(modifier: Modifier = Modifier) {
+    val colors = clusterColors()
     Canvas(
         modifier
             .fillMaxWidth()
@@ -326,7 +334,7 @@ fun RightShrinkWing(modifier: Modifier = Modifier) {
             // Soften lower corners (flat + notch) and the top-inner; keep outer-top square.
             radii = floatArrayOf(0f, r, r, r)
         )
-        drawPath(path, ClusterPanel)
+        drawPath(path, colors.panel)
     }
 }
 
@@ -339,6 +347,7 @@ fun CombatWingFooters(
     data: ClusterPlaceholders,
     modifier: Modifier = Modifier
 ) {
+    val colors = clusterColors()
     Row(
         modifier
             .fillMaxWidth()
@@ -356,13 +365,13 @@ fun CombatWingFooters(
                 modifier = Modifier
                     .width(FooterStripeWidth)
                     .height(FooterMarkHeight),
-                color = ClusterStripe,
+                color = colors.stripe,
                 count = data.efficiencyBars
             )
             Spacer(Modifier.width(12.dp))
             Text(
                 text = data.efficiencyLabel,
-                color = ClusterMuted,
+                color = colors.muted,
                 fontFamily = ClusterUiFont,
                 fontSize = FooterLabelSize,
                 fontWeight = FontWeight.SemiBold,
@@ -381,7 +390,7 @@ fun CombatWingFooters(
         ) {
             Text(
                 text = data.regenLevel,
-                color = ClusterMuted,
+                color = colors.muted,
                 fontFamily = ClusterUiFont,
                 fontSize = FooterLabelSize,
                 fontWeight = FontWeight.SemiBold,
@@ -393,8 +402,8 @@ fun CombatWingFooters(
                 modifier = Modifier
                     .width(FooterCellsWidth)
                     .height(FooterMarkHeight),
-                fillColor = ClusterValue.copy(alpha = 0.88f),
-                emptyColor = ClusterValue.copy(alpha = 0.40f)
+                fillColor = colors.value.copy(alpha = 0.88f),
+                emptyColor = colors.value.copy(alpha = 0.40f)
             )
         }
     }
@@ -408,6 +417,7 @@ private fun MetricHeader(
     alignEnd: Boolean = false,
     modifier: Modifier = Modifier
 ) {
+    val colors = clusterColors()
     Column(
         modifier,
         horizontalAlignment = if (alignEnd) Alignment.End else Alignment.Start
@@ -421,7 +431,7 @@ private fun MetricHeader(
         )
         Text(
             text = value,
-            color = ClusterValue,
+            color = colors.value,
             fontFamily = ClusterUiFont,
             fontSize = 18.sp,
             fontWeight = FontWeight.SemiBold

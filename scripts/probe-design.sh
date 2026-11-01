@@ -38,7 +38,7 @@ color_re = re.compile(
 const_re = re.compile(
     r"(?:private\s+|internal\s+)?val\s+(\w+)\s*=\s*([0-9]+(?:\.[0-9]+)?)\s*\.(dp|sp)"
 )
-# data class defaults: val energyWhPerKm: String = "054"
+# data class defaults: val avgSpeedKmh: String = "———"
 placeholder_re = re.compile(
     r"val\s+(\w+)\s*:\s*[\w.<>,\s?]+\s*=\s*(\"[^\"]*\"|true|false|[0-9]+)"
 )
