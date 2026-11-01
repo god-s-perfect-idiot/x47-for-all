@@ -4,7 +4,7 @@ import android.content.Context
 
 /**
  * Lifetime odometer meters — survives process death.
- * Trip distance stays in memory only (resets each app session).
+ * Per-ride distance lives in [TripStore] (draft + history).
  */
 class OdometerStore(context: Context) {
     private val prefs = context.applicationContext

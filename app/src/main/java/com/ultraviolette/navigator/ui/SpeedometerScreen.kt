@@ -1,16 +1,19 @@
 package com.ultraviolette.navigator.ui
 
-import android.os.Build
-import android.view.RoundedCorner
-import androidx.compose.foundation.background
+import androidx.activity.compose.BackHandler
+import androidx.compose.animation.AnimatedContent
+import androidx.compose.animation.SizeTransform
+import androidx.compose.animation.core.FastOutSlowInEasing
+import androidx.compose.animation.core.tween
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.slideInVertically
+import androidx.compose.animation.slideOutVertically
+import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Box
-import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.Spacer
-import androidx.compose.foundation.layout.WindowInsets
-import androidx.compose.foundation.layout.displayCutout
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -18,18 +21,19 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.platform.LocalDensity
-import androidx.compose.ui.platform.LocalLayoutDirection
-import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.tooling.preview.Preview
-import androidx.compose.ui.unit.Dp
+import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
-import androidx.core.view.ViewCompat
 import com.ultraviolette.navigator.model.ClusterPlaceholders
+import com.ultraviolette.navigator.model.SavedTrip
 import com.ultraviolette.navigator.ui.components.CenterSpeedCluster
+import com.ultraviolette.navigator.ui.components.ClusterFrame
 import com.ultraviolette.navigator.ui.components.CombatBarHeight
 import com.ultraviolette.navigator.ui.components.CombatFlatHeight
 import com.ultraviolette.navigator.ui.components.CombatModeNotch
@@ -38,163 +42,159 @@ import com.ultraviolette.navigator.ui.components.LeftMetricsColumn
 import com.ultraviolette.navigator.ui.components.LeftShrinkWing
 import com.ultraviolette.navigator.ui.components.RightMetricsColumn
 import com.ultraviolette.navigator.ui.components.RightShrinkWing
-import com.ultraviolette.navigator.ui.components.TopStatusBar
 import com.ultraviolette.navigator.ui.theme.UltravioletteNavigatorTheme
-import com.ultraviolette.navigator.ui.theme.clusterColors
 import com.ultraviolette.navigator.ui.theme.rememberClusterAccent
-import kotlin.math.max
 
-/** Minimum black clearance so UI clears phone rounded corners on short edges. */
-private val MinEdgeBezel = 28.dp
 /** Side rails hug the bezel; tight enough that avg / time grey boxes stay compact. */
 private val SideRailWidth = 145.dp
+
+private enum class ClusterPane { Speedometer, ControlCentre, Trips }
 
 @Composable
 fun SpeedometerScreen(
     data: ClusterPlaceholders = ClusterPlaceholders(),
-    onControlCentreClick: () -> Unit = {},
+    trips: List<SavedTrip> = emptyList(),
     onRideModeClick: () -> Unit = {},
+    onEndRide: () -> Unit = {},
     modifier: Modifier = Modifier
 ) {
-    val colors = clusterColors()
-    val density = LocalDensity.current
-    val layoutDirection = LocalLayoutDirection.current
-    val view = LocalView.current
-    val cutout = WindowInsets.displayCutout
-    val cutoutLeft = with(density) { cutout.getLeft(this, layoutDirection).toDp() }
-    val cutoutRight = with(density) { cutout.getRight(this, layoutDirection).toDp() }
-
-    // Re-read when view size/insets change (including sensorLandscape flips).
-    val rounded = remember(view, view.width, view.height) {
-        edgeRoundedCornerPx(view)
+    var pane by remember { mutableStateOf(ClusterPane.Speedometer) }
+    BackHandler(enabled = pane != ClusterPane.Speedometer) {
+        pane = when (pane) {
+            ClusterPane.Trips -> ClusterPane.ControlCentre
+            ClusterPane.ControlCentre -> ClusterPane.Speedometer
+            ClusterPane.Speedometer -> ClusterPane.Speedometer
+        }
     }
-    val leftRound = with(density) { rounded.left.toDp() }
-    val rightRound = with(density) { rounded.right.toDp() }
 
-    // Always pad both short edges. Cutout alone vanishes on the non-notch side after rotate;
-    // rounded-corner + min bezel keep coverage stable in both landscape directions.
-    val leftBezel = maxOf(MinEdgeBezel, cutoutLeft, leftRound)
-    val rightBezel = maxOf(MinEdgeBezel, cutoutRight, rightRound)
-    val accent = rememberClusterAccent(data)
-
-    Row(
+    ClusterFrame(
+        data = data,
         modifier = modifier
-            .fillMaxSize()
-            .background(colors.bezel)
     ) {
-        EdgeBezel(leftBezel)
-
-        Column(
-            Modifier
-                .weight(1f)
-                .fillMaxHeight()
-                .background(colors.background)
-        ) {
-            TopStatusBar(data = data)
-
-            Box(
-                Modifier
-                    .weight(1f)
-                    .fillMaxWidth()
-            ) {
-                Row(Modifier.fillMaxSize()) {
-                    // Stems continue through EFF / SPD wings; stop above the dark combat flat.
-                    LeftMetricsColumn(
-                        data = data,
-                        accent = accent.label,
-                        modifier = Modifier
-                            .width(SideRailWidth)
-                            .fillMaxHeight()
-                            .padding(bottom = CombatFlatHeight)
-                    )
-
-                    CenterSpeedCluster(
-                        data = data,
-                        accent = accent.primary,
-                        onControlCentreClick = onControlCentreClick,
-                        modifier = Modifier
-                            .weight(1f)
-                            .fillMaxHeight()
-                            .padding(bottom = CombatBarHeight)
-                    )
-
-                    RightMetricsColumn(
-                        data = data,
-                        accent = accent.label,
-                        modifier = Modifier
-                            .width(SideRailWidth)
-                            .fillMaxHeight()
-                            .padding(bottom = CombatFlatHeight)
-                    )
-                }
-
-                LeftShrinkWing(
-                    modifier = Modifier.align(Alignment.BottomStart)
-                )
-                RightShrinkWing(
-                    modifier = Modifier.align(Alignment.BottomEnd)
-                )
-
-                CombatModeNotch(
-                    rideMode = data.rideMode,
-                    isMoving = data.isMoving,
-                    accent = accent.primary,
-                    modifier = Modifier.align(Alignment.BottomCenter)
-                )
-
-                CombatWingFooters(
-                    data = data,
-                    accent = accent.primary,
-                    modifier = Modifier.align(Alignment.BottomCenter)
-                )
-
-                // Above wing footers so the full bottom strip receives taps.
-                val modeTapSource = remember { MutableInteractionSource() }
-                Box(
-                    Modifier
-                        .align(Alignment.BottomCenter)
-                        .fillMaxWidth()
-                        .height(CombatBarHeight)
-                        .clickable(
-                            interactionSource = modeTapSource,
-                            indication = null,
-                            onClick = onRideModeClick
+        AnimatedContent(
+            targetState = pane,
+            transitionSpec = {
+                val spec = tween<Float>(280, easing = FastOutSlowInEasing)
+                val slide = tween<IntOffset>(280, easing = FastOutSlowInEasing)
+                val opening = targetState.ordinal > initialState.ordinal
+                if (opening) {
+                    (
+                        fadeIn(spec) + slideInVertically(animationSpec = slide) { it }
+                        ) togetherWith (
+                        fadeOut(spec) + slideOutVertically(animationSpec = slide) { -it / 6 }
                         )
+                } else {
+                    (
+                        fadeIn(spec) + slideInVertically(animationSpec = slide) { -it / 6 }
+                        ) togetherWith (
+                        fadeOut(spec) + slideOutVertically(animationSpec = slide) { it }
+                        )
+                } using SizeTransform(clip = false)
+            },
+            label = "clusterPane",
+            modifier = Modifier.fillMaxSize()
+        ) { current ->
+            when (current) {
+                ClusterPane.ControlCentre -> ControlCenterContent(
+                    data = data,
+                    onClose = { pane = ClusterPane.Speedometer },
+                    onRideModeClick = onRideModeClick,
+                    onTripsClick = { pane = ClusterPane.Trips },
+                    modifier = Modifier.fillMaxSize()
+                )
+                ClusterPane.Trips -> TripsHistoryContent(
+                    data = data,
+                    trips = trips,
+                    onClose = { pane = ClusterPane.ControlCentre },
+                    onEndRide = onEndRide,
+                    modifier = Modifier.fillMaxSize()
+                )
+                ClusterPane.Speedometer -> SpeedometerBody(
+                    data = data,
+                    onControlCentreClick = { pane = ClusterPane.ControlCentre },
+                    onRideModeClick = onRideModeClick,
+                    modifier = Modifier.fillMaxSize()
                 )
             }
         }
-
-        EdgeBezel(rightBezel)
     }
 }
 
 @Composable
-private fun EdgeBezel(width: Dp) {
-    val colors = clusterColors()
-    Spacer(
-        Modifier
-            .width(width)
-            .fillMaxHeight()
-            .background(colors.bezel)
-    )
-}
+private fun SpeedometerBody(
+    data: ClusterPlaceholders,
+    onControlCentreClick: () -> Unit,
+    onRideModeClick: () -> Unit,
+    modifier: Modifier = Modifier
+) {
+    val accent = rememberClusterAccent(data)
 
-private data class EdgeRounds(val left: Int, val right: Int)
+    Box(modifier = modifier) {
+        Row(Modifier.fillMaxSize()) {
+            // Stems continue through EFF / SPD wings; stop above the dark combat flat.
+            LeftMetricsColumn(
+                data = data,
+                accent = accent.label,
+                modifier = Modifier
+                    .width(SideRailWidth)
+                    .fillMaxHeight()
+                    .padding(bottom = CombatFlatHeight)
+            )
 
-private fun edgeRoundedCornerPx(view: android.view.View): EdgeRounds {
-    if (Build.VERSION.SDK_INT < Build.VERSION_CODES.S) {
-        return EdgeRounds(0, 0)
+            CenterSpeedCluster(
+                data = data,
+                accent = accent.primary,
+                onControlCentreClick = onControlCentreClick,
+                modifier = Modifier
+                    .weight(1f)
+                    .fillMaxHeight()
+                    .padding(bottom = CombatBarHeight)
+            )
+
+            RightMetricsColumn(
+                data = data,
+                accent = accent.label,
+                modifier = Modifier
+                    .width(SideRailWidth)
+                    .fillMaxHeight()
+                    .padding(bottom = CombatFlatHeight)
+            )
+        }
+
+        LeftShrinkWing(
+            modifier = Modifier.align(Alignment.BottomStart)
+        )
+        RightShrinkWing(
+            modifier = Modifier.align(Alignment.BottomEnd)
+        )
+
+        CombatModeNotch(
+            rideMode = data.rideMode,
+            isMoving = data.isMoving,
+            accent = accent.primary,
+            modifier = Modifier.align(Alignment.BottomCenter)
+        )
+
+        CombatWingFooters(
+            data = data,
+            accent = accent.primary,
+            modifier = Modifier.align(Alignment.BottomCenter)
+        )
+
+        // Above wing footers so the full bottom strip receives taps.
+        val modeTapSource = remember { MutableInteractionSource() }
+        Box(
+            Modifier
+                .align(Alignment.BottomCenter)
+                .fillMaxWidth()
+                .height(CombatBarHeight)
+                .clickable(
+                    interactionSource = modeTapSource,
+                    indication = null,
+                    onClick = onRideModeClick
+                )
+        )
     }
-    val insets = ViewCompat.getRootWindowInsets(view)?.toWindowInsets() ?: return EdgeRounds(0, 0)
-    val left = max(
-        insets.getRoundedCorner(RoundedCorner.POSITION_TOP_LEFT)?.radius ?: 0,
-        insets.getRoundedCorner(RoundedCorner.POSITION_BOTTOM_LEFT)?.radius ?: 0
-    )
-    val right = max(
-        insets.getRoundedCorner(RoundedCorner.POSITION_TOP_RIGHT)?.radius ?: 0,
-        insets.getRoundedCorner(RoundedCorner.POSITION_BOTTOM_RIGHT)?.radius ?: 0
-    )
-    return EdgeRounds(left, right)
 }
 
 @Preview(name = "Combat", showBackground = true, widthDp = 854, heightDp = 480)

@@ -8,9 +8,11 @@ import com.ultraviolette.navigator.battery.BatteryRepository
 import com.ultraviolette.navigator.connectivity.ConnectivityRepository
 import com.ultraviolette.navigator.location.OdometerStore
 import com.ultraviolette.navigator.location.SpeedRepository
+import com.ultraviolette.navigator.location.TripStore
 import com.ultraviolette.navigator.model.ClusterPlaceholders
 import com.ultraviolette.navigator.model.RideMode
 import com.ultraviolette.navigator.model.RideModeStore
+import com.ultraviolette.navigator.model.SavedTrip
 import com.ultraviolette.navigator.sensor.AmbientLightRepository
 import com.ultraviolette.navigator.sensor.LeanAngleRepository
 import com.ultraviolette.navigator.sensor.RidingSmoothnessRepository
@@ -40,18 +42,23 @@ class ClusterViewModel(application: Application) : AndroidViewModel(application)
     private val clockRepository = ClockRepository()
     private val odometerStore = OdometerStore(application)
     private val rideModeStore = RideModeStore(application)
+    private val tripStore = TripStore(application)
     private val idle = ClusterPlaceholders()
 
     /** Lifetime meters — loaded from disk, written back as we ride. */
     private var totalMeters: Double = odometerStore.readTotalMeters()
     /** Last chosen ride theme — loaded from disk so reopen keeps accent. */
     private val savedRideMode: String = rideModeStore.readRideMode()
-    /** Current trip meters — resets when the process starts a new ViewModel. */
+    /** Current trip meters — continues until the ride is finalized into history. */
     private var tripMeters: Double = 0.0
     /** Moving-only trip duration (paused while speed is 0). */
     private var movingMsAccumulated: Long = 0L
     /** ElapsedRealtime when the current moving segment began; null while stopped. */
     private var movingSegmentStartMs: Long? = null
+    /** Wall-clock start of the open ride; null until the first movement. */
+    private var tripStartedAtEpochMs: Long? = null
+    /** Last time we flushed the in-progress draft to disk. */
+    private var lastDraftWriteElapsedMs: Long = 0L
 
     private val _data = MutableStateFlow(
         idle.copy(
@@ -61,6 +68,9 @@ class ClusterViewModel(application: Application) : AndroidViewModel(application)
         )
     )
     val data: StateFlow<ClusterPlaceholders> = _data.asStateFlow()
+
+    private val _trips = MutableStateFlow(tripStore.readTrips())
+    val trips: StateFlow<List<SavedTrip>> = _trips.asStateFlow()
 
     private var speedJob: Job? = null
     private var batteryJob: Job? = null
@@ -72,9 +82,11 @@ class ClusterViewModel(application: Application) : AndroidViewModel(application)
     private var weatherJob: Job? = null
     private var clockJob: Job? = null
     private var tripTickerJob: Job? = null
+    private var idleFinalizeJob: Job? = null
     private var isMoving = false
 
     init {
+        recoverDraftIfNeeded()
         startBatteryUpdates()
         startLeanUpdates()
         startAmbientLightUpdates()
@@ -82,6 +94,14 @@ class ClusterViewModel(application: Application) : AndroidViewModel(application)
         startDisciplineUpdates()
         startConnectivityUpdates()
         startClockUpdates()
+    }
+
+    /** Seal the current ride into history and start a fresh trip counter. */
+    fun endCurrentTrip() {
+        cancelIdleFinalize()
+        if (isMoving) pauseMovingClock()
+        stopTripTicker()
+        finalizeOpenTrip()
     }
 
     fun onLocationPermissionResult(granted: Boolean) {
@@ -133,17 +153,22 @@ class ClusterViewModel(application: Application) : AndroidViewModel(application)
                 speedDisciplineRepository.updateSpeed(sample.speedKmh, sample.isMoving)
 
                 if (sample.isMoving && sample.deltaMeters > 0f) {
+                    ensureTripStarted()
                     tripMeters += sample.deltaMeters
                     totalMeters += sample.deltaMeters
                     odometerStore.writeTotalMeters(totalMeters)
                 }
 
                 if (sample.isMoving && !wasMoving) {
+                    ensureTripStarted()
+                    cancelIdleFinalize()
                     movingSegmentStartMs = SystemClock.elapsedRealtime()
                     startTripTicker()
                 } else if (!sample.isMoving && wasMoving) {
                     pauseMovingClock()
                     stopTripTicker()
+                    persistDraft(force = true)
+                    scheduleIdleFinalize()
                 }
 
                 publishTripMetrics(
@@ -156,8 +181,110 @@ class ClusterViewModel(application: Application) : AndroidViewModel(application)
                     gpsAvailable = sample.gpsAvailable,
                     altitudeText = formatAltitude(sample.altitudeM)
                 )
+                persistDraft(force = false)
             }
         }
+    }
+
+    /** Mark wall-clock start the first time this ride sees motion. */
+    private fun ensureTripStarted() {
+        if (tripStartedAtEpochMs == null) {
+            tripStartedAtEpochMs = System.currentTimeMillis()
+        }
+    }
+
+    /**
+     * Resume an in-progress ride after process death. Clean exits finalize via
+     * [finalizeOpenTrip] and clear the draft, so a leftover draft means the
+     * previous process never sealed the ride.
+     */
+    private fun recoverDraftIfNeeded() {
+        val draft = tripStore.readDraft() ?: return
+        tripStartedAtEpochMs = draft.startedAtEpochMs
+        tripMeters = draft.distanceMeters.coerceAtLeast(0.0)
+        movingMsAccumulated = draft.movingMs.coerceAtLeast(0L)
+        movingSegmentStartMs = null
+        _data.update { current ->
+            current.copy(
+                tripKm = formatDistanceKm(tripMeters),
+                avgSpeedKmh = formatAvgSpeed(tripMeters, movingMsAccumulated),
+                tripTimeText = formatTripTime(movingMsAccumulated)
+            )
+        }
+    }
+
+    private fun persistDraft(force: Boolean) {
+        val started = tripStartedAtEpochMs ?: return
+        if (tripMeters < 1.0) return
+        val now = SystemClock.elapsedRealtime()
+        if (!force && now - lastDraftWriteElapsedMs < DRAFT_WRITE_INTERVAL_MS) return
+        lastDraftWriteElapsedMs = now
+        val current = _data.value
+        tripStore.writeDraft(
+            TripStore.TripDraft(
+                startedAtEpochMs = started,
+                distanceMeters = tripMeters,
+                movingMs = movingElapsedMs(),
+                rideMode = current.rideMode,
+                efficiencyBars = current.efficiencyBars,
+                disciplineBars = current.disciplineBars
+            )
+        )
+    }
+
+    /** After a long stop, seal the ride so the next movement starts a new trip. */
+    private fun scheduleIdleFinalize() {
+        cancelIdleFinalize()
+        if (tripStartedAtEpochMs == null) return
+        if (tripMeters < SavedTrip.MIN_SAVE_METERS) return
+        idleFinalizeJob = viewModelScope.launch {
+            delay(IDLE_FINALIZE_MS)
+            if (!isMoving) {
+                finalizeOpenTrip()
+            }
+        }
+    }
+
+    private fun cancelIdleFinalize() {
+        idleFinalizeJob?.cancel()
+        idleFinalizeJob = null
+    }
+
+    /** Seal the open ride into history when it has enough distance. */
+    private fun finalizeOpenTrip() {
+        cancelIdleFinalize()
+        if (isMoving) pauseMovingClock()
+        val started = tripStartedAtEpochMs
+        val meters = tripMeters
+        val movingMs = movingElapsedMs()
+        tripStore.clearDraft()
+        tripStartedAtEpochMs = null
+        tripMeters = 0.0
+        movingMsAccumulated = 0L
+        movingSegmentStartMs = null
+        if (started != null && meters >= SavedTrip.MIN_SAVE_METERS) {
+            val current = _data.value
+            appendTrip(
+                SavedTrip(
+                    startedAtEpochMs = started,
+                    endedAtEpochMs = System.currentTimeMillis(),
+                    distanceMeters = meters,
+                    movingMs = movingMs,
+                    rideMode = current.rideMode,
+                    efficiencyBars = current.efficiencyBars,
+                    disciplineBars = current.disciplineBars
+                )
+            )
+        }
+        publishTripMetrics()
+    }
+
+    private fun appendTrip(trip: SavedTrip) {
+        val next = (listOf(trip) + _trips.value)
+            .sortedByDescending { it.endedAtEpochMs }
+            .distinctBy { it.id }
+        _trips.value = next
+        tripStore.writeTrips(next)
     }
 
     /** Advancing avg + trip clock only while speed > 0. */
@@ -400,6 +527,7 @@ class ClusterViewModel(application: Application) : AndroidViewModel(application)
         stopSpeedUpdates(resetToIdle = false)
         tripTickerJob?.cancel()
         tripTickerJob = null
+        finalizeOpenTrip()
         stopWeatherUpdates()
         leanJob?.cancel()
         leanJob = null
@@ -418,6 +546,11 @@ class ClusterViewModel(application: Application) : AndroidViewModel(application)
     }
 
     private companion object {
+        /** Throttle draft disk writes while actively riding. */
+        const val DRAFT_WRITE_INTERVAL_MS = 15_000L
+        /** Seal a stopped ride after this long so the next movement is a new trip. */
+        const val IDLE_FINALIZE_MS = 15 * 60 * 1000L
+
         fun formatSpeedDigits(kmh: Int): String =
             "%03d".format(kmh.coerceIn(0, 999))
 

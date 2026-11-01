@@ -42,6 +42,9 @@ Mark each row **pass** / **fail** / **n/a**. Failures need a one-line fix hypoth
 | C2 | `km` / `h` unit split flanking speed |
 | C3 | Accent from `rememberClusterAccent` matches ride mode (COMBAT red / BALLISTIC cyan) |
 | C4 | Control-centre affordance present where designed |
+| C5 | Tapping Control Centre opens modular grid; top bar stays; back/system-back dismisses |
+| C6 | Control Centre keeps phone-relevant tiles (battery/trips/ride mode/sensors/EFF/SPD/Google Maps); no ABS/TPMS/dashcam/radar |
+| C7 | TRIPS tile opens saved-ride history; back returns to Control Centre |
 
 ## Bottom / mode
 

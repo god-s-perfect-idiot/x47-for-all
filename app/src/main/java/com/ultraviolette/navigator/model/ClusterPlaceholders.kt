@@ -16,7 +16,7 @@ data class ClusterPlaceholders(
     val gpsAvailable: Boolean = false,
     /** Lifetime distance — overwritten live from GPS + persisted store. */
     val odometerKm: String = "0.0 km",
-    /** Current trip distance — overwritten live; resets each app session. */
+    /** Current trip distance — overwritten live; sealed into trip history when the ride ends. */
     val tripKm: String = "0.0 km",
     /** Trip average speed — overwritten live from distance ÷ elapsed trip time. */
     val avgSpeedKmh: String = "———",

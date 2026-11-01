@@ -5,7 +5,6 @@ import android.content.pm.PackageManager
 import android.os.Build
 import android.os.Bundle
 import android.view.WindowManager
-import android.widget.Toast
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.compose.setContent
@@ -85,16 +84,12 @@ class MainActivity : ComponentActivity() {
                     }
                 }
 
+                val trips by clusterViewModel.trips.collectAsStateWithLifecycle()
                 SpeedometerScreen(
                     data = data,
-                    onControlCentreClick = {
-                        Toast.makeText(
-                            this@MainActivity,
-                            "Control Centre — placeholder",
-                            Toast.LENGTH_SHORT
-                        ).show()
-                    },
+                    trips = trips,
                     onRideModeClick = { clusterViewModel.cycleRideMode() },
+                    onEndRide = { clusterViewModel.endCurrentTrip() },
                     modifier = Modifier.fillMaxSize()
                 )
             }

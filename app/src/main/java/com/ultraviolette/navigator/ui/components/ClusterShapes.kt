@@ -468,3 +468,30 @@ fun HexagonIcon(
         drawPath(inner, color)
     }
 }
+
+/**
+ * Control-centre tile outline — diamond-cut corners matching UV modular panels.
+ */
+class ChamferShape(
+    private val chamfer: Dp = 10.dp
+) : Shape {
+    override fun createOutline(
+        size: Size,
+        layoutDirection: LayoutDirection,
+        density: Density
+    ): Outline {
+        val c = with(density) { chamfer.toPx() }.coerceAtMost(minOf(size.width, size.height) / 3f)
+        val path = Path().apply {
+            moveTo(c, 0f)
+            lineTo(size.width - c, 0f)
+            lineTo(size.width, c)
+            lineTo(size.width, size.height - c)
+            lineTo(size.width - c, size.height)
+            lineTo(c, size.height)
+            lineTo(0f, size.height - c)
+            lineTo(0f, c)
+            close()
+        }
+        return Outline.Generic(path)
+    }
+}
