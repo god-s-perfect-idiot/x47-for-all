@@ -35,16 +35,16 @@ val UvBrandColors = BrandPackColors(
 )
 
 val KtmBrandColors = BrandPackColors(
-    primary = Color(0xFFFF6600),
+    primary = KtmOrange,
     secondary = Color(0xFF000000),
     wash = Color(0xFFFFE8D6),
     onPrimary = Color(0xFF000000),
-    tileBackground = Color(0xFFFF6600),
+    tileBackground = KtmOrange,
     tileForeground = Color(0xFF000000),
     tileMuted = Color(0xFF3A1A00),
-    glide = Color(0xFFB85A00),
-    combat = Color(0xFFFF6600),
-    ballistic = Color(0xFFE63E00)
+    glide = KtmOrangeDim,
+    combat = KtmOrange,
+    ballistic = KtmOrangeDeep
 )
 
 val BmwBrandColors = BrandPackColors(

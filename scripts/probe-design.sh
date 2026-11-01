@@ -24,15 +24,18 @@ out_md = Path(sys.argv[3])
 
 files = {
     "colors": root / "app/src/main/java/com/ultraviolette/navigator/ui/theme/Color.kt",
+    "ktm_colors": root / "app/src/main/java/com/ultraviolette/navigator/ui/theme/KtmTheme.kt",
     "screen": root / "app/src/main/java/com/ultraviolette/navigator/ui/SpeedometerScreen.kt",
     "side": root / "app/src/main/java/com/ultraviolette/navigator/ui/components/SideMetrics.kt",
     "bottom": root / "app/src/main/java/com/ultraviolette/navigator/ui/components/BottomModeBar.kt",
     "center": root / "app/src/main/java/com/ultraviolette/navigator/ui/components/CenterSpeedCluster.kt",
+    "ktm_cluster": root / "app/src/main/java/com/ultraviolette/navigator/ui/ktm/KtmClusterBody.kt",
+    "ktm_control": root / "app/src/main/java/com/ultraviolette/navigator/ui/ktm/KtmControlCenter.kt",
     "placeholders": root / "app/src/main/java/com/ultraviolette/navigator/model/ClusterPlaceholders.kt",
 }
 
 color_re = re.compile(
-    r"val\s+(Cluster\w+)\s*=\s*Color\(0x([0-9A-Fa-f]{8})\)"
+    r"val\s+((?:Cluster|Ktm)\w+)\s*=\s*Color\(0x([0-9A-Fa-f]{8})\)"
 )
 # private/public vals like: private val SideRailWidth = 180.dp / SideValueSize = 48.sp
 const_re = re.compile(
@@ -56,14 +59,16 @@ facts = {
     "files": {k: rel(v) for k, v in files.items() if v.exists()},
 }
 
-for key in ("colors",):
-    path = files[key]
+for key in ("colors", "ktm_colors"):
+    path = files.get(key)
+    if path is None or not path.exists():
+        continue
     text = path.read_text(encoding="utf-8")
     for name, hex8 in color_re.findall(text):
         facts["colors"][name] = f"#{hex8[2:].upper()}"  # drop alpha for display hex RGB
         facts["colors"][f"{name}_argb"] = f"#{hex8.upper()}"
 
-for key in ("screen", "side", "bottom", "center"):
+for key in ("screen", "side", "bottom", "center", "ktm_cluster", "ktm_control"):
     path = files[key]
     if not path.exists():
         continue

@@ -151,6 +151,18 @@ class ClusterViewModel(application: Application) : AndroidViewModel(application)
         }
     }
 
+    /** Set a specific ride mode (KTM control-centre mode pills). */
+    fun setRideMode(mode: String) {
+        val canonical = RideMode.canonicalize(mode) ?: return
+        _data.update { current ->
+            if (current.rideMode.equals(canonical, ignoreCase = true)) current
+            else {
+                rideModeStore.writeRideMode(canonical)
+                current.copy(rideMode = canonical)
+            }
+        }
+    }
+
     /** Control Centre → Settings → Vehicle — rename the identity tile bike. */
     fun setBikeName(name: String) {
         val trimmed = name.trim()

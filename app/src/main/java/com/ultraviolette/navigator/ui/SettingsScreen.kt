@@ -35,6 +35,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
@@ -71,6 +72,12 @@ import com.ultraviolette.navigator.ui.components.BladeSharpCorner
 import com.ultraviolette.navigator.ui.components.ChamferShape
 import com.ultraviolette.navigator.ui.components.clusterTileEnter
 import com.ultraviolette.navigator.ui.components.clusterTileEnterLinearDelayMs
+import com.ultraviolette.navigator.ui.ktm.KtmDetailColumn
+import com.ultraviolette.navigator.ui.ktm.KtmDetailCta
+import com.ultraviolette.navigator.ui.ktm.KtmDetailStat
+import com.ultraviolette.navigator.ui.ktm.KtmDetailTitle
+import com.ultraviolette.navigator.ui.ktm.KtmSubmenuShell
+import com.ultraviolette.navigator.ui.ktm.ktmSpeedDigits
 import com.ultraviolette.navigator.ui.theme.ArialBrandFont
 import com.ultraviolette.navigator.ui.theme.BrandPackColors
 import com.ultraviolette.navigator.ui.theme.BmwMotorradFont
@@ -79,11 +86,18 @@ import com.ultraviolette.navigator.ui.theme.BmwStripeNavy
 import com.ultraviolette.navigator.ui.theme.BmwStripeRed
 import com.ultraviolette.navigator.ui.theme.ClusterUiFont
 import com.ultraviolette.navigator.ui.theme.DashfordFont
+import com.ultraviolette.navigator.ui.theme.KtmMuted
+import com.ultraviolette.navigator.ui.theme.KtmOrange
+import com.ultraviolette.navigator.ui.theme.KtmPanel
 import com.ultraviolette.navigator.ui.theme.SpaceportOneFont
 import com.ultraviolette.navigator.ui.theme.UltravioletteNavigatorTheme
 import com.ultraviolette.navigator.ui.theme.brandPackColors
 import com.ultraviolette.navigator.ui.theme.clusterColors
+import com.ultraviolette.navigator.ui.theme.isKtmTheme
 import com.ultraviolette.navigator.ui.theme.rememberClusterAccent
+import com.ultraviolette.navigator.ui.theme.rememberKtmChrome
+import com.ultraviolette.navigator.ui.theme.rememberKtmUiFont
+import androidx.compose.foundation.shape.RoundedCornerShape
 
 private enum class SettingsPage { Menu, Themes, Vehicle }
 
@@ -140,12 +154,13 @@ fun SettingsContent(
     ) { current ->
         when (current) {
             SettingsPage.Menu -> SettingsMenuPage(
-                brandTheme = data.brandTheme,
+                data = data,
                 onClose = onClose,
                 onThemesClick = { page = SettingsPage.Themes },
                 onVehicleClick = { page = SettingsPage.Vehicle },
                 modifier = Modifier.fillMaxSize()
             )
+            // Themes keeps the brand-tile face — not KTM chrome.
             SettingsPage.Themes -> ThemesPage(
                 selectedTheme = data.brandTheme,
                 onClose = { page = SettingsPage.Menu },
@@ -164,15 +179,81 @@ fun SettingsContent(
 
 @Composable
 private fun SettingsMenuPage(
-    brandTheme: String,
+    data: ClusterPlaceholders,
     onClose: () -> Unit,
     onThemesClick: () -> Unit,
     onVehicleClick: () -> Unit,
     modifier: Modifier = Modifier
 ) {
+    val brandTheme = data.brandTheme
+    val ktm = isKtmTheme(brandTheme)
     val colors = clusterColors()
     val gap = 6.dp
     val themeLabel = BrandTheme.meta(brandTheme).label
+    val themeMeta = BrandTheme.meta(brandTheme)
+
+    if (ktm) {
+        val chrome = rememberKtmChrome(data)
+        val uiFont = rememberKtmUiFont()
+        var selectedIndex by remember { mutableIntStateOf(0) }
+        val titles = listOf("Themes", "Vehicle")
+
+        KtmSubmenuShell(
+            menuTitles = titles,
+            selectedIndex = selectedIndex,
+            onSelect = { selectedIndex = it },
+            onBack = onClose,
+            speedText = ktmSpeedDigits(data.speedKmh),
+            gearText = chrome.gear,
+            modeLabel = chrome.modeLabel,
+            modifier = modifier
+        ) {
+            when (selectedIndex) {
+                0 -> KtmDetailColumn {
+                    KtmDetailTitle("THEMES")
+                    Text(
+                        text = themeMeta.label,
+                        color = Color.White,
+                        fontFamily = uiFont,
+                        fontSize = 32.sp,
+                        fontWeight = FontWeight.Black
+                    )
+                    Text(
+                        text = themeMeta.tagline,
+                        color = KtmOrange,
+                        fontFamily = uiFont,
+                        fontSize = 13.sp,
+                        fontWeight = FontWeight.Black,
+                        letterSpacing = 1.2.sp
+                    )
+                    Spacer(Modifier.height(8.dp))
+                    KtmDetailStat("ACTIVE", themeLabel)
+                    Spacer(Modifier.height(12.dp))
+                    KtmDetailCta("Open theme picker →", onClick = onThemesClick)
+                }
+                else -> KtmDetailColumn {
+                    KtmDetailTitle("VEHICLE")
+                    Text(
+                        text = data.bikeName,
+                        color = Color.White,
+                        fontFamily = uiFont,
+                        fontSize = 28.sp,
+                        fontWeight = FontWeight.Black
+                    )
+                    Text(
+                        text = "Bike display name",
+                        color = KtmMuted,
+                        fontFamily = uiFont,
+                        fontSize = 13.sp,
+                        fontWeight = FontWeight.Bold
+                    )
+                    Spacer(Modifier.height(12.dp))
+                    KtmDetailCta("Edit bike name →", onClick = onVehicleClick)
+                }
+            }
+        }
+        return
+    }
 
     Column(
         modifier = modifier
@@ -547,8 +628,15 @@ private fun VehiclePage(
     onBikeNameChange: (String) -> Unit,
     modifier: Modifier = Modifier
 ) {
+    val ktm = isKtmTheme(data.brandTheme)
     val colors = clusterColors()
-    val accent = rememberClusterAccent(data).primary
+    val clusterAccent = rememberClusterAccent(data).primary
+    val accent = if (ktm) KtmOrange else clusterAccent
+    val ktmFont = rememberKtmUiFont()
+    val uiFont = if (ktm) ktmFont else ClusterUiFont
+    val chamferField = remember { ChamferShape(8.dp) }
+    val chamferSave = remember { ChamferShape(8.dp) }
+    val roundField = RoundedCornerShape(6.dp)
     val bikeName = data.bikeName
     val gap = 6.dp
     val focusManager = LocalFocusManager.current
@@ -565,6 +653,124 @@ private fun VehiclePage(
         }
         focusManager.clearFocus()
         keyboard?.hide()
+    }
+
+    val body: @Composable () -> Unit = {
+        Column(
+            Modifier.fillMaxSize(),
+            verticalArrangement = Arrangement.spacedBy(10.dp)
+        ) {
+            Text(
+                text = "BIKE NAME",
+                color = if (ktm) KtmMuted else colors.muted,
+                fontFamily = uiFont,
+                fontSize = 11.sp,
+                fontWeight = FontWeight.Bold,
+                letterSpacing = 1.1.sp
+            )
+            val fieldShape = if (ktm) roundField else chamferField
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(52.dp)
+                    .clip(fieldShape)
+                    .background(if (ktm) KtmPanel else colors.pill)
+                    .border(
+                        1.15.dp,
+                        if (ktm) KtmOrange.copy(alpha = 0.45f) else colors.pillBorder,
+                        fieldShape
+                    )
+                    .clickable(
+                        interactionSource = remember { MutableInteractionSource() },
+                        indication = null,
+                        onClick = { focusRequester.requestFocus() }
+                    )
+                    .padding(horizontal = 14.dp),
+                contentAlignment = Alignment.CenterStart
+            ) {
+                BasicTextField(
+                    value = draft,
+                    onValueChange = { next ->
+                        if (next.length <= 18) draft = next.uppercase()
+                    },
+                    singleLine = true,
+                    textStyle = TextStyle(
+                        color = colors.text,
+                        fontFamily = uiFont,
+                        fontSize = 20.sp,
+                        fontWeight = FontWeight.Bold,
+                        letterSpacing = 0.8.sp
+                    ),
+                    cursorBrush = SolidColor(accent),
+                    keyboardOptions = KeyboardOptions(
+                        capitalization = KeyboardCapitalization.Characters,
+                        imeAction = ImeAction.Done
+                    ),
+                    keyboardActions = KeyboardActions(onDone = { commit() }),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .focusRequester(focusRequester)
+                )
+            }
+            Text(
+                text = "Shown on the Control Centre navigator tile.",
+                color = if (ktm) KtmMuted else colors.muted,
+                fontFamily = uiFont,
+                fontSize = 11.sp,
+                fontWeight = FontWeight.Medium
+            )
+            Spacer(Modifier.weight(1f))
+            val saveEnabled = draft.trim().isNotEmpty() && draft.trim() != bikeName
+            val saveShape = if (ktm) roundField else chamferSave
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(48.dp)
+                    .clip(saveShape)
+                    .background(
+                        if (saveEnabled) accent.copy(alpha = if (ktm) 0.28f else 0.18f)
+                        else if (ktm) KtmPanel else colors.pill
+                    )
+                    .border(
+                        width = 1.15.dp,
+                        color = if (saveEnabled) accent else if (ktm) KtmMuted.copy(alpha = 0.4f) else colors.pillBorder,
+                        shape = saveShape
+                    )
+                    .clickable(
+                        enabled = saveEnabled,
+                        interactionSource = remember { MutableInteractionSource() },
+                        indication = null,
+                        onClick = { commit() }
+                    ),
+                contentAlignment = Alignment.Center
+            ) {
+                Text(
+                    text = "SAVE",
+                    color = if (saveEnabled) accent else if (ktm) KtmMuted else colors.muted,
+                    fontFamily = uiFont,
+                    fontSize = 14.sp,
+                    fontWeight = FontWeight.Bold,
+                    letterSpacing = 1.2.sp
+                )
+            }
+        }
+    }
+
+    if (ktm) {
+        val chrome = rememberKtmChrome(data)
+        KtmSubmenuShell(
+            menuTitles = listOf("Bike name"),
+            selectedIndex = 0,
+            onSelect = {},
+            onBack = onClose,
+            speedText = ktmSpeedDigits(data.speedKmh),
+            gearText = chrome.gear,
+            modeLabel = chrome.modeLabel,
+            modifier = modifier
+        ) {
+            body()
+        }
+        return
     }
 
     Column(
@@ -585,99 +791,7 @@ private fun VehiclePage(
                 .fillMaxSize()
                 .clusterTileEnter(clusterTileEnterLinearDelayMs(2))
         ) {
-            Column(
-                Modifier.fillMaxSize(),
-                verticalArrangement = Arrangement.spacedBy(10.dp)
-            ) {
-                Text(
-                    text = "BIKE NAME",
-                    color = colors.muted,
-                    fontFamily = ClusterUiFont,
-                    fontSize = 11.sp,
-                    fontWeight = FontWeight.Bold,
-                    letterSpacing = 1.1.sp
-                )
-                val fieldShape = remember { ChamferShape(8.dp) }
-                Box(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .height(52.dp)
-                        .clip(fieldShape)
-                        .background(colors.pill)
-                        .border(1.15.dp, colors.pillBorder, fieldShape)
-                        .clickable(
-                            interactionSource = remember { MutableInteractionSource() },
-                            indication = null,
-                            onClick = { focusRequester.requestFocus() }
-                        )
-                        .padding(horizontal = 14.dp),
-                    contentAlignment = Alignment.CenterStart
-                ) {
-                    BasicTextField(
-                        value = draft,
-                        onValueChange = { next ->
-                            if (next.length <= 18) draft = next.uppercase()
-                        },
-                        singleLine = true,
-                        textStyle = TextStyle(
-                            color = colors.text,
-                            fontFamily = ClusterUiFont,
-                            fontSize = 20.sp,
-                            fontWeight = FontWeight.Bold,
-                            letterSpacing = 0.8.sp
-                        ),
-                        cursorBrush = SolidColor(accent),
-                        keyboardOptions = KeyboardOptions(
-                            capitalization = KeyboardCapitalization.Characters,
-                            imeAction = ImeAction.Done
-                        ),
-                        keyboardActions = KeyboardActions(onDone = { commit() }),
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .focusRequester(focusRequester)
-                    )
-                }
-                Text(
-                    text = "Shown on the Control Centre navigator tile.",
-                    color = colors.muted,
-                    fontFamily = ClusterUiFont,
-                    fontSize = 11.sp,
-                    fontWeight = FontWeight.Medium
-                )
-                Spacer(Modifier.weight(1f))
-                val saveEnabled = draft.trim().isNotEmpty() && draft.trim() != bikeName
-                val saveShape = remember { ChamferShape(8.dp) }
-                Box(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .height(48.dp)
-                        .clip(saveShape)
-                        .background(
-                            if (saveEnabled) accent.copy(alpha = 0.18f) else colors.pill
-                        )
-                        .border(
-                            width = 1.15.dp,
-                            color = if (saveEnabled) accent else colors.pillBorder,
-                            shape = saveShape
-                        )
-                        .clickable(
-                            enabled = saveEnabled,
-                            interactionSource = remember { MutableInteractionSource() },
-                            indication = null,
-                            onClick = { commit() }
-                        ),
-                    contentAlignment = Alignment.Center
-                ) {
-                    Text(
-                        text = "SAVE",
-                        color = if (saveEnabled) accent else colors.muted,
-                        fontFamily = ClusterUiFont,
-                        fontSize = 14.sp,
-                        fontWeight = FontWeight.Bold,
-                        letterSpacing = 1.2.sp
-                    )
-                }
-            }
+            body()
         }
     }
 }

@@ -41,14 +41,17 @@ import com.ultraviolette.navigator.model.SavedTrip
 import com.ultraviolette.navigator.ui.components.ChamferShape
 import com.ultraviolette.navigator.ui.components.clusterTileEnter
 import com.ultraviolette.navigator.ui.components.clusterTileEnterLinearDelayMs
+import com.ultraviolette.navigator.ui.ktm.KtmTripsContent
 import com.ultraviolette.navigator.ui.theme.ClusterUiFont
 import com.ultraviolette.navigator.ui.theme.UltravioletteNavigatorTheme
 import com.ultraviolette.navigator.ui.theme.clusterColors
+import com.ultraviolette.navigator.ui.theme.isKtmTheme
 import com.ultraviolette.navigator.ui.theme.rememberClusterAccent
 
 /**
  * Saved-ride list opened from the Control Centre TRIPS tile.
  * Current ride sits on top; past rides scroll below newest-first.
+ * KTM uses the shared pill-menu shell ([KtmTripsContent]).
  */
 @Composable
 fun TripsHistoryContent(
@@ -58,10 +61,22 @@ fun TripsHistoryContent(
     onEndRide: () -> Unit,
     modifier: Modifier = Modifier
 ) {
+    if (isKtmTheme(data.brandTheme)) {
+        KtmTripsContent(
+            data = data,
+            trips = trips,
+            onClose = onClose,
+            onEndRide = onEndRide,
+            modifier = modifier
+        )
+        return
+    }
+
     val colors = clusterColors()
     val accent = rememberClusterAccent(data)
-
     val hasCurrentRide = data.tripKm != "0.0 km" && data.tripKm != "0 km"
+    val tripCount = trips.size + if (hasCurrentRide) 1 else 0
+    val headerTileCount = if (hasCurrentRide) 3 else 2
 
     Column(
         modifier = modifier
@@ -70,7 +85,6 @@ fun TripsHistoryContent(
             .padding(horizontal = 10.dp, vertical = 8.dp),
         verticalArrangement = Arrangement.spacedBy(6.dp)
     ) {
-        val headerTileCount = if (hasCurrentRide) 3 else 2
         Row(
             Modifier
                 .fillMaxWidth()
@@ -86,7 +100,7 @@ fun TripsHistoryContent(
                     .clusterTileEnter(clusterTileEnterLinearDelayMs(0))
             )
             TripsHeaderTile(
-                count = trips.size + if (hasCurrentRide) 1 else 0,
+                count = tripCount,
                 modifier = Modifier
                     .weight(1f)
                     .fillMaxHeight()
@@ -106,7 +120,7 @@ fun TripsHistoryContent(
 
         if (!hasCurrentRide && trips.isEmpty()) {
             EmptyTripsTile(
-                Modifier
+                modifier = Modifier
                     .fillMaxSize()
                     .clusterTileEnter(clusterTileEnterLinearDelayMs(headerTileCount))
             )

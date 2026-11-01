@@ -34,7 +34,10 @@ class MainActivity : ComponentActivity() {
 
         setContent {
             val data by clusterViewModel.data.collectAsStateWithLifecycle()
-            UltravioletteNavigatorTheme(darkTheme = data.isDarkMode) {
+            UltravioletteNavigatorTheme(
+                darkTheme = data.isDarkMode,
+                brandTheme = data.brandTheme
+            ) {
                 val permissionLauncher = rememberLauncherForActivityResult(
                     ActivityResultContracts.RequestMultiplePermissions()
                 ) { result ->
@@ -89,6 +92,7 @@ class MainActivity : ComponentActivity() {
                     data = data,
                     trips = trips,
                     onRideModeClick = { clusterViewModel.cycleRideMode() },
+                    onRideModeSelect = { clusterViewModel.setRideMode(it) },
                     onEndRide = { clusterViewModel.endCurrentTrip() },
                     onBikeNameChange = { clusterViewModel.setBikeName(it) },
                     onBrandThemeChange = { clusterViewModel.setBrandTheme(it) },

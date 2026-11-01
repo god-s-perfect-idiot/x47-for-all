@@ -7,7 +7,9 @@ import androidx.compose.animation.core.FastOutSlowInEasing
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
+import androidx.compose.animation.slideInHorizontally
 import androidx.compose.animation.slideInVertically
+import androidx.compose.animation.slideOutHorizontally
 import androidx.compose.animation.slideOutVertically
 import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.clickable
@@ -42,7 +44,11 @@ import com.ultraviolette.navigator.ui.components.LeftMetricsColumn
 import com.ultraviolette.navigator.ui.components.LeftShrinkWing
 import com.ultraviolette.navigator.ui.components.RightMetricsColumn
 import com.ultraviolette.navigator.ui.components.RightShrinkWing
+import com.ultraviolette.navigator.ui.ktm.KtmClusterBody
+import com.ultraviolette.navigator.ui.ktm.KtmControlCenterContent
+import com.ultraviolette.navigator.ui.ktm.KtmPaneMotionMs
 import com.ultraviolette.navigator.ui.theme.UltravioletteNavigatorTheme
+import com.ultraviolette.navigator.ui.theme.isKtmTheme
 import com.ultraviolette.navigator.ui.theme.rememberClusterAccent
 
 /** Side rails hug the bezel; tight enough that avg / time grey boxes stay compact. */
@@ -55,6 +61,7 @@ fun SpeedometerScreen(
     data: ClusterPlaceholders = ClusterPlaceholders(),
     trips: List<SavedTrip> = emptyList(),
     onRideModeClick: () -> Unit = {},
+    onRideModeSelect: (String) -> Unit = {},
     onEndRide: () -> Unit = {},
     onBikeNameChange: (String) -> Unit = {},
     onBrandThemeChange: (String) -> Unit = {},
@@ -62,6 +69,7 @@ fun SpeedometerScreen(
 ) {
     var pane by remember { mutableStateOf(ClusterPane.Speedometer) }
     var themesImmersive by remember { mutableStateOf(false) }
+    val ktm = isKtmTheme(data.brandTheme)
     BackHandler(enabled = pane != ClusterPane.Speedometer) {
         pane = when (pane) {
             ClusterPane.Trips, ClusterPane.Settings -> ClusterPane.ControlCentre
@@ -72,15 +80,13 @@ fun SpeedometerScreen(
 
     ClusterFrame(
         data = data,
-        showTopBar = !themesImmersive,
+        // KTM draws its own clock / ABS chrome; UV keeps the geometric top strip.
+        showTopBar = !themesImmersive && !ktm,
         modifier = modifier
     ) {
         AnimatedContent(
             targetState = pane,
             transitionSpec = {
-                val spec = tween<Float>(280, easing = FastOutSlowInEasing)
-                val slide = tween<IntOffset>(280, easing = FastOutSlowInEasing)
-                // Speedometer is root; everything else is a forward drill-in from Control Centre.
                 val opening = when {
                     initialState == ClusterPane.Speedometer -> true
                     targetState == ClusterPane.Speedometer -> false
@@ -88,32 +94,67 @@ fun SpeedometerScreen(
                     targetState == ClusterPane.ControlCentre -> false
                     else -> targetState.ordinal > initialState.ordinal
                 }
-                if (opening) {
-                    (
-                        fadeIn(spec) + slideInVertically(animationSpec = slide) { it }
-                        ) togetherWith (
-                        fadeOut(spec) + slideOutVertically(animationSpec = slide) { -it / 6 }
-                        )
+                if (ktm) {
+                    val spec = tween<Float>(KtmPaneMotionMs, easing = FastOutSlowInEasing)
+                    val slide = tween<IntOffset>(KtmPaneMotionMs, easing = FastOutSlowInEasing)
+                    // Horizontal punch — KTM TFT menus slide sideways.
+                    if (opening) {
+                        (
+                            fadeIn(spec) + slideInHorizontally(animationSpec = slide) { it / 3 }
+                            ) togetherWith (
+                            fadeOut(spec) + slideOutHorizontally(animationSpec = slide) { -it / 5 }
+                            )
+                    } else {
+                        (
+                            fadeIn(spec) + slideInHorizontally(animationSpec = slide) { -it / 5 }
+                            ) togetherWith (
+                            fadeOut(spec) + slideOutHorizontally(animationSpec = slide) { it / 3 }
+                            )
+                    } using SizeTransform(clip = false)
                 } else {
-                    (
-                        fadeIn(spec) + slideInVertically(animationSpec = slide) { -it / 6 }
-                        ) togetherWith (
-                        fadeOut(spec) + slideOutVertically(animationSpec = slide) { it }
-                        )
-                } using SizeTransform(clip = false)
+                    val spec = tween<Float>(280, easing = FastOutSlowInEasing)
+                    val slide = tween<IntOffset>(280, easing = FastOutSlowInEasing)
+                    if (opening) {
+                        (
+                            fadeIn(spec) + slideInVertically(animationSpec = slide) { it }
+                            ) togetherWith (
+                            fadeOut(spec) + slideOutVertically(animationSpec = slide) { -it / 6 }
+                            )
+                    } else {
+                        (
+                            fadeIn(spec) + slideInVertically(animationSpec = slide) { -it / 6 }
+                            ) togetherWith (
+                            fadeOut(spec) + slideOutVertically(animationSpec = slide) { it }
+                            )
+                    } using SizeTransform(clip = false)
+                }
             },
             label = "clusterPane",
             modifier = Modifier.fillMaxSize()
         ) { current ->
             when (current) {
-                ClusterPane.ControlCentre -> ControlCenterContent(
-                    data = data,
-                    onClose = { pane = ClusterPane.Speedometer },
-                    onRideModeClick = onRideModeClick,
-                    onTripsClick = { pane = ClusterPane.Trips },
-                    onSettingsClick = { pane = ClusterPane.Settings },
-                    modifier = Modifier.fillMaxSize()
-                )
+                ClusterPane.ControlCentre -> {
+                    if (ktm) {
+                        KtmControlCenterContent(
+                            data = data,
+                            onClose = { pane = ClusterPane.Speedometer },
+                            onRideModeClick = onRideModeClick,
+                            onRideModeSelect = onRideModeSelect,
+                            onTripsClick = { pane = ClusterPane.Trips },
+                            onSettingsClick = { pane = ClusterPane.Settings },
+                            modifier = Modifier.fillMaxSize()
+                        )
+                    } else {
+                        ControlCenterContent(
+                            data = data,
+                            onClose = { pane = ClusterPane.Speedometer },
+                            onRideModeClick = onRideModeClick,
+                            onTripsClick = { pane = ClusterPane.Trips },
+                            onSettingsClick = { pane = ClusterPane.Settings },
+                            modifier = Modifier.fillMaxSize()
+                        )
+                    }
+                }
                 ClusterPane.Trips -> TripsHistoryContent(
                     data = data,
                     trips = trips,
@@ -129,12 +170,23 @@ fun SpeedometerScreen(
                     onThemesActiveChange = { themesImmersive = it },
                     modifier = Modifier.fillMaxSize()
                 )
-                ClusterPane.Speedometer -> SpeedometerBody(
-                    data = data,
-                    onControlCentreClick = { pane = ClusterPane.ControlCentre },
-                    onRideModeClick = onRideModeClick,
-                    modifier = Modifier.fillMaxSize()
-                )
+                ClusterPane.Speedometer -> {
+                    if (ktm) {
+                        KtmClusterBody(
+                            data = data,
+                            onControlCentreClick = { pane = ClusterPane.ControlCentre },
+                            onRideModeClick = onRideModeClick,
+                            modifier = Modifier.fillMaxSize()
+                        )
+                    } else {
+                        SpeedometerBody(
+                            data = data,
+                            onControlCentreClick = { pane = ClusterPane.ControlCentre },
+                            onRideModeClick = onRideModeClick,
+                            modifier = Modifier.fillMaxSize()
+                        )
+                    }
+                }
             }
         }
     }
@@ -222,5 +274,24 @@ private fun SpeedometerBody(
 private fun CombatPreview() {
     UltravioletteNavigatorTheme {
         SpeedometerScreen(ClusterPlaceholders())
+    }
+}
+
+@Preview(name = "KTM", showBackground = true, widthDp = 854, heightDp = 480)
+@Composable
+private fun KtmPreview() {
+    UltravioletteNavigatorTheme(brandTheme = "KTM") {
+        SpeedometerScreen(
+            ClusterPlaceholders(
+                brandTheme = "KTM",
+                speedKmh = "050",
+                isMoving = true,
+                timeText = "20:23",
+                tripKm = "32.1 km",
+                avgSpeedKmh = "64",
+                odometerKm = "1010 km",
+                batteryPercent = 100
+            )
+        )
     }
 }

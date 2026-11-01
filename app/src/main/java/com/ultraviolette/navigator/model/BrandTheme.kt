@@ -2,7 +2,8 @@ package com.ultraviolette.navigator.model
 
 /**
  * Selectable cluster brand pack (Settings → Themes).
- * Remaps ride-mode accents while keeping GLIDE / COMBAT / BALLISTIC behavior.
+ * Each pack can swap cluster layout, control centre, motion, and accents.
+ * UV keeps the modular X47 face; KTM switches to the Ready-to-Race TFT layout.
  */
 object BrandTheme {
     const val UV = "UV"
