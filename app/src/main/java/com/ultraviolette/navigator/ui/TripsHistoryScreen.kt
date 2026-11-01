@@ -19,7 +19,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.remember
@@ -39,6 +39,8 @@ import com.ultraviolette.navigator.model.ClusterPlaceholders
 import com.ultraviolette.navigator.model.RideMode
 import com.ultraviolette.navigator.model.SavedTrip
 import com.ultraviolette.navigator.ui.components.ChamferShape
+import com.ultraviolette.navigator.ui.components.clusterTileEnter
+import com.ultraviolette.navigator.ui.components.clusterTileEnterLinearDelayMs
 import com.ultraviolette.navigator.ui.theme.ClusterUiFont
 import com.ultraviolette.navigator.ui.theme.UltravioletteNavigatorTheme
 import com.ultraviolette.navigator.ui.theme.clusterColors
@@ -68,6 +70,7 @@ fun TripsHistoryContent(
             .padding(horizontal = 10.dp, vertical = 8.dp),
         verticalArrangement = Arrangement.spacedBy(6.dp)
     ) {
+        val headerTileCount = if (hasCurrentRide) 3 else 2
         Row(
             Modifier
                 .fillMaxWidth()
@@ -80,12 +83,14 @@ fun TripsHistoryContent(
                 modifier = Modifier
                     .width(64.dp)
                     .fillMaxHeight()
+                    .clusterTileEnter(clusterTileEnterLinearDelayMs(0))
             )
             TripsHeaderTile(
                 count = trips.size + if (hasCurrentRide) 1 else 0,
                 modifier = Modifier
                     .weight(1f)
                     .fillMaxHeight()
+                    .clusterTileEnter(clusterTileEnterLinearDelayMs(1))
             )
             if (hasCurrentRide) {
                 EndRideTile(
@@ -94,12 +99,17 @@ fun TripsHistoryContent(
                     modifier = Modifier
                         .width(110.dp)
                         .fillMaxHeight()
+                        .clusterTileEnter(clusterTileEnterLinearDelayMs(2))
                 )
             }
         }
 
         if (!hasCurrentRide && trips.isEmpty()) {
-            EmptyTripsTile(Modifier.fillMaxSize())
+            EmptyTripsTile(
+                Modifier
+                    .fillMaxSize()
+                    .clusterTileEnter(clusterTileEnterLinearDelayMs(headerTileCount))
+            )
         } else {
             LazyColumn(
                 modifier = Modifier.fillMaxSize(),
@@ -116,11 +126,15 @@ fun TripsHistoryContent(
                             duration = data.tripTimeText,
                             rideMode = data.rideMode,
                             accent = accent.primary,
-                            highlight = true
+                            highlight = true,
+                            modifier = Modifier.clusterTileEnter(
+                                clusterTileEnterLinearDelayMs(headerTileCount)
+                            )
                         )
                     }
                 }
-                items(trips, key = { it.id }) { trip ->
+                itemsIndexed(trips, key = { _, trip -> trip.id }) { index, trip ->
+                    val enterOrder = headerTileCount + (if (hasCurrentRide) 1 else 0) + index
                     TripRowTile(
                         title = trip.dateText.uppercase(),
                         whenText = trip.timeRangeText,
@@ -129,7 +143,10 @@ fun TripsHistoryContent(
                         duration = trip.durationText,
                         rideMode = trip.rideMode,
                         accent = accent.primary,
-                        highlight = false
+                        highlight = false,
+                        modifier = Modifier.clusterTileEnter(
+                            clusterTileEnterLinearDelayMs(enterOrder)
+                        )
                     )
                 }
             }

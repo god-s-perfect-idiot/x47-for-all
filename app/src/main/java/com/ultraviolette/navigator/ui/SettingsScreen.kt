@@ -1,6 +1,15 @@
 package com.ultraviolette.navigator.ui
 
 import androidx.activity.compose.BackHandler
+import androidx.compose.animation.AnimatedContent
+import androidx.compose.animation.SizeTransform
+import androidx.compose.animation.core.FastOutSlowInEasing
+import androidx.compose.animation.core.tween
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.slideInVertically
+import androidx.compose.animation.slideOutVertically
+import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -44,11 +53,14 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.KeyboardCapitalization
 import androidx.compose.ui.tooling.preview.Preview
+import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.ultraviolette.navigator.model.BikeNameStore
 import com.ultraviolette.navigator.model.ClusterPlaceholders
 import com.ultraviolette.navigator.ui.components.ChamferShape
+import com.ultraviolette.navigator.ui.components.clusterTileEnter
+import com.ultraviolette.navigator.ui.components.clusterTileEnterLinearDelayMs
 import com.ultraviolette.navigator.ui.theme.ClusterUiFont
 import com.ultraviolette.navigator.ui.theme.UltravioletteNavigatorTheme
 import com.ultraviolette.navigator.ui.theme.clusterColors
@@ -72,23 +84,51 @@ fun SettingsContent(
         page = SettingsPage.Menu
     }
 
-    when (page) {
-        SettingsPage.Menu -> SettingsMenuPage(
-            onClose = onClose,
-            onThemesClick = { page = SettingsPage.Themes },
-            onVehicleClick = { page = SettingsPage.Vehicle },
-            modifier = modifier
-        )
-        SettingsPage.Themes -> ThemesPage(
-            onClose = { page = SettingsPage.Menu },
-            modifier = modifier
-        )
-        SettingsPage.Vehicle -> VehiclePage(
-            data = data,
-            onClose = { page = SettingsPage.Menu },
-            onBikeNameChange = onBikeNameChange,
-            modifier = modifier
-        )
+    AnimatedContent(
+        targetState = page,
+        transitionSpec = {
+            val spec = tween<Float>(280, easing = FastOutSlowInEasing)
+            val slide = tween<IntOffset>(280, easing = FastOutSlowInEasing)
+            val opening = when {
+                initialState == SettingsPage.Menu -> true
+                targetState == SettingsPage.Menu -> false
+                else -> targetState.ordinal > initialState.ordinal
+            }
+            if (opening) {
+                (
+                    fadeIn(spec) + slideInVertically(animationSpec = slide) { it }
+                    ) togetherWith (
+                    fadeOut(spec) + slideOutVertically(animationSpec = slide) { -it / 6 }
+                    )
+            } else {
+                (
+                    fadeIn(spec) + slideInVertically(animationSpec = slide) { -it / 6 }
+                    ) togetherWith (
+                    fadeOut(spec) + slideOutVertically(animationSpec = slide) { it }
+                    )
+            } using SizeTransform(clip = false)
+        },
+        label = "settingsPage",
+        modifier = modifier
+    ) { current ->
+        when (current) {
+            SettingsPage.Menu -> SettingsMenuPage(
+                onClose = onClose,
+                onThemesClick = { page = SettingsPage.Themes },
+                onVehicleClick = { page = SettingsPage.Vehicle },
+                modifier = Modifier.fillMaxSize()
+            )
+            SettingsPage.Themes -> ThemesPage(
+                onClose = { page = SettingsPage.Menu },
+                modifier = Modifier.fillMaxSize()
+            )
+            SettingsPage.Vehicle -> VehiclePage(
+                data = data,
+                onClose = { page = SettingsPage.Menu },
+                onBikeNameChange = onBikeNameChange,
+                modifier = Modifier.fillMaxSize()
+            )
+        }
     }
 }
 
@@ -112,7 +152,8 @@ private fun SettingsMenuPage(
         SettingsHeaderRow(
             title = "SETTINGS",
             subtitle = "Themes & vehicle",
-            onClose = onClose
+            onClose = onClose,
+            enterOrder = 0
         )
         Row(
             Modifier
@@ -127,6 +168,7 @@ private fun SettingsMenuPage(
                 modifier = Modifier
                     .weight(1f)
                     .fillMaxHeight()
+                    .clusterTileEnter(clusterTileEnterLinearDelayMs(2))
             )
             SettingsNavTile(
                 title = "VEHICLE",
@@ -135,6 +177,7 @@ private fun SettingsMenuPage(
                 modifier = Modifier
                     .weight(1f)
                     .fillMaxHeight()
+                    .clusterTileEnter(clusterTileEnterLinearDelayMs(3))
             )
         }
     }
@@ -158,9 +201,14 @@ private fun ThemesPage(
         SettingsHeaderRow(
             title = "THEMES",
             subtitle = "Accent packs",
-            onClose = onClose
+            onClose = onClose,
+            enterOrder = 0
         )
-        SettingsPanel(Modifier.fillMaxSize()) {
+        SettingsPanel(
+            Modifier
+                .fillMaxSize()
+                .clusterTileEnter(clusterTileEnterLinearDelayMs(2))
+        ) {
             Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
                 // Left empty intentionally — themes land later.
             }
@@ -205,9 +253,14 @@ private fun VehiclePage(
         SettingsHeaderRow(
             title = "VEHICLE",
             subtitle = "Identity",
-            onClose = onClose
+            onClose = onClose,
+            enterOrder = 0
         )
-        SettingsPanel(Modifier.fillMaxSize()) {
+        SettingsPanel(
+            Modifier
+                .fillMaxSize()
+                .clusterTileEnter(clusterTileEnterLinearDelayMs(2))
+        ) {
             Column(
                 Modifier.fillMaxSize(),
                 verticalArrangement = Arrangement.spacedBy(10.dp)
@@ -310,6 +363,7 @@ private fun SettingsHeaderRow(
     title: String,
     subtitle: String,
     onClose: () -> Unit,
+    enterOrder: Int = 0,
     modifier: Modifier = Modifier
 ) {
     Row(
@@ -324,11 +378,13 @@ private fun SettingsHeaderRow(
             modifier = Modifier
                 .width(64.dp)
                 .fillMaxHeight()
+                .clusterTileEnter(clusterTileEnterLinearDelayMs(enterOrder))
         )
         SettingsPanel(
             Modifier
                 .weight(1f)
                 .fillMaxHeight()
+                .clusterTileEnter(clusterTileEnterLinearDelayMs(enterOrder + 1))
         ) {
             Column(Modifier.fillMaxSize(), verticalArrangement = Arrangement.Center) {
                 Text(
