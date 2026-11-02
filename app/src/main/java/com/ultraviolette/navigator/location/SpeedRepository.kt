@@ -322,8 +322,14 @@ class SpeedRepository(context: Context) {
 
             override fun onAccuracyChanged(sensor: Sensor?, accuracy: Int) = Unit
         }
+        // SENSOR_DELAY_FASTEST (0µs) requires HIGH_SAMPLING_RATE_SENSORS on API 31+ and
+        // crashes without it. GAME (~50Hz) is enough for park/still detection.
         linear?.let {
-            sensorManager.registerListener(sensorListener, it, SensorManager.SENSOR_DELAY_FASTEST)
+            try {
+                sensorManager.registerListener(sensorListener, it, SensorManager.SENSOR_DELAY_GAME)
+            } catch (_: SecurityException) {
+                // Continue with GNSS/network speed only if sensor access is blocked.
+            }
         }
 
         trySend(SpeedSample(speedKmh = 0f, isMoving = false, gpsAvailable = false))
