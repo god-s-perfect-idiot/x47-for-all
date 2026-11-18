@@ -120,24 +120,34 @@ class WeatherRepository(context: Context) {
             val token = CancellationTokenSource()
             cont.invokeOnCancellation { token.cancel() }
 
+            fun resumeOnce(location: Location?) {
+                if (cont.isActive) cont.resume(location)
+            }
+
             try {
                 fusedClient.getCurrentLocation(
                     Priority.PRIORITY_BALANCED_POWER_ACCURACY,
                     token.token
                 ).addOnCompleteListener { task ->
                     if (!cont.isActive) return@addOnCompleteListener
-                    val current = task.result
+                    // Failed tasks throw from task.result (e.g. Play Services
+                    // SERVICE_INVALID on devices without a working GMS stack).
+                    val current = if (task.isSuccessful) task.result else null
                     if (current != null) {
-                        cont.resume(current)
+                        resumeOnce(current)
                         return@addOnCompleteListener
                     }
-                    fusedClient.lastLocation
-                        .addOnCompleteListener { lastTask ->
-                            if (cont.isActive) cont.resume(lastTask.result)
+                    try {
+                        fusedClient.lastLocation.addOnCompleteListener { lastTask ->
+                            val last = if (lastTask.isSuccessful) lastTask.result else null
+                            resumeOnce(last)
                         }
+                    } catch (_: Exception) {
+                        resumeOnce(null)
+                    }
                 }
             } catch (_: Exception) {
-                if (cont.isActive) cont.resume(null)
+                resumeOnce(null)
             }
         }
 
